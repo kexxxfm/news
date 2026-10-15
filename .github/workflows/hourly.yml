@@ -100,3 +100,17 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./site
           force_orphan: true
+
+      # Перевірка після публікації: чи справді відкривається mp3 (GitHub Pages оновлюється з затримкою).
+      - name: Перевірити, що аудіо відкривається
+        if: steps.bot.outputs.published == 'true' && steps.bot.outputs.audio_file != ''
+        run: |
+          URL="${{ vars.SITE_BASE_URL }}/${{ steps.bot.outputs.audio_file }}"
+          code=000
+          for i in $(seq 1 12); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" -I "$URL" || true)
+            if [ "$code" = "200" ]; then echo "Аудіо доступне: $URL"; exit 0; fi
+            echo "Спроба $i: код $code, чекаю 30 с"; sleep 30
+          done
+          echo "::error::Аудіо НЕ відкривається за адресою $URL (код $code). Перевірте змінну SITE_BASE_URL і налаштування GitHub Pages."
+          exit 1
