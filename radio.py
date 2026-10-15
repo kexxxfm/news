@@ -91,7 +91,7 @@ def trim_silence(x: np.ndarray, thresh_db: float = -48, keep_ms: int = 70) -> np
     return x[a:b]
 
 
-def split_by_pauses(x: np.ndarray, parts: int, min_gap_ms: int = 250, edge_ms: int = 600, min_item_gap_ms: int = 600):
+def split_by_pauses(x: np.ndarray, parts: int, min_gap_ms: int = 250, edge_ms: int = 600, min_item_gap_ms: int = 500):
     """Ріже озвучення на `parts` шматків по найдовших паузах. Повертає (шматки, довжини пауз)
     або (None, []) якщо достатньо виразних пауз не знайдено."""
     if parts <= 1:
