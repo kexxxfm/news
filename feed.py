@@ -84,6 +84,20 @@ def last_meta(site_dir: str) -> dict:
         return {}
 
 
+def covered_keys(site_dir: str, last_n: int = 12) -> set:
+    """Ключі постів, що вже звучали в останніх випусках (щоб новини не повторювались, навіть при вікні в 6 годин)."""
+    try:
+        with open(os.path.join(site_dir, "episodes.json"), encoding="utf-8") as fh:
+            eps = json.load(fh)
+        eps.sort(key=lambda e: e["pub"], reverse=True)
+        keys = set()
+        for e in eps[:last_n]:
+            keys.update((e.get("meta") or {}).get("posts") or [])
+        return keys
+    except (OSError, ValueError, KeyError):
+        return set()
+
+
 def latest_episode(site_dir: str) -> dict | None:
     """Останній опублікований випуск (запис із episodes.json) або None."""
     try:
@@ -97,7 +111,7 @@ def latest_episode(site_dir: str) -> dict | None:
 
 
 def publish(site_dir: str, mp3_path: str, title: str, description: str,
-            duration: int, now: datetime, keep: int, cfg: dict, meta: dict | None = None, name_suffix: str = "") -> None:
+            duration: int, now: datetime, keep: int, cfg: dict, meta: dict | None = None, name_suffix: str = "") -> str:
     os.makedirs(site_dir, exist_ok=True)
     manifest_path = os.path.join(site_dir, "episodes.json")
     episodes: list[dict] = []
@@ -131,4 +145,5 @@ def publish(site_dir: str, mp3_path: str, title: str, description: str,
     with open(os.path.join(site_dir, "feed.xml"), "w", encoding="utf-8") as f:
         f.write(build_feed(episodes, cfg))
     write_index(site_dir, episodes, cfg)
+    return fname
     print(f"У фіді {len(episodes)} випусків")
