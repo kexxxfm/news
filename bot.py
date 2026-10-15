@@ -55,13 +55,13 @@ def opt(key: str, env: str, default):
 
 
 ENABLED = opt("enabled", "BOT_ENABLED", True)
-CHANNELS = opt("channels", "TG_CHANNELS", "")
+CHANNELS = opt("channels", "TG_CHANNELS", "@kexxx")  # основний канал-джерело
+RESERVE_CHANNELS = opt("reserve_channels", "RESERVE_CHANNELS", "@stranaua")  # резервний: читаємо, якщо в основному немає нового
 GEMINI_MODEL = opt("gemini_model", "GEMINI_MODEL", "gemini-3.8-flash")
 GEMINI_FALLBACK_MODEL = opt("gemini_fallback_model", "GEMINI_FALLBACK_MODEL",
                            "gemini-3.5-flash-lite,gemini-3.6-flash")  # запасні моделі через кому
-NEWS_WINDOW_MIN = opt("news_window_min", "NEWS_WINDOW_MIN", 180)  # новини за останні 3 години
-DEDUPE = opt("dedupe", "DEDUPE", True)                      # не повторювати пости з попереднього випуску
-REPEAT_WHEN_EMPTY = opt("repeat_when_empty", "REPEAT_WHEN_EMPTY", True)  # немає нового — повтор останніх 3 год
+NEWS_WINDOW_MIN = opt("news_window_min", "NEWS_WINDOW_MIN", 360)  # новини за останні 6 годин
+DEDUPE = opt("dedupe", "DEDUPE", True)  # не повторювати пости, що вже звучали в останніх випусках
 MAX_POSTS = opt("max_posts", "MAX_POSTS", 40)
 MIN_SENTENCES = opt("min_sentences", "MIN_SENTENCES", 1)
 KEEP_EPISODES = opt("keep_episodes", "KEEP_EPISODES", 24)
@@ -73,7 +73,7 @@ TTS_RETRY_MIN = opt("tts_retry_min", "TTS_RETRY_MIN", 40)      # скільки 
 TTS_MAX_ATTEMPTS = opt("tts_max_attempts", "TTS_MAX_ATTEMPTS", 20)  # стеля спроб за один випуск (береже квоту)
 TTS_AIR_MARGIN_MIN = opt("tts_air_margin_min", "TTS_AIR_MARGIN_MIN", 8)  # не боротися за озвучку пізніше, ніж за стільки хвилин до ефіру
 TTS_DELAYS = [20, 30, 45, 60, 90, 120]  # зростаючі паузи між спробами, далі по 120 с
-TTS_MAX_BYTES = opt("tts_max_bytes", "TTS_MAX_BYTES", 3900)  # ліміт на один запит озвучення (стиль + текст)
+TTS_MAX_BYTES = opt("tts_max_bytes", "TTS_MAX_BYTES", 12000)  # стеля тексту одного запиту (стиль + текст); в API Gemini ліміту 4000 байт немає
 ASSET_DIR = opt("asset_dir", "ASSET_DIR", "assets")
 MP3_BITRATE = opt("mp3_bitrate", "MP3_BITRATE", "192k")  # стерео-mp3, кбіт/с
 BED_ENABLED = opt("bed_enabled", "BED_ENABLED", True)
@@ -89,25 +89,15 @@ PACK_BY_PART = {
     "вечір": opt("pack_evening", "PACK_EVENING", "deep_house"),
     "ніч": opt("pack_night", "PACK_NIGHT", "night_chill"),
 }
-STAY_ENABLED = opt("stay_enabled", "STAY_ENABLED", True)  # після привітання: «не перемикайтесь, новини короткі»
-STAY_LINES = [x.strip() for x in opt("stay_lines", "STAY_LINES", "\n".join([
-    "Не перемикайтесь: новини короткі, трохи більше хвилини, і дуже скоро знову буде ваша улюблена музика.",
-    "Випуск короткий, трохи більше хвилини, тож залишайтеся з нами: дуже скоро знову буде ваша улюблена музика.",
-    "Залишайтеся на хвилинку: новини короткі, а далі знову ваша улюблена музика.",
-    "Новини коротко, трохи більше хвилини. Не перемикайтесь: дуже скоро знову буде ваша улюблена музика.",
-    "Не надовго: трохи більше хвилини новин, а дуже скоро знову прозвучить ваша улюблена музика. Не перемикайтесь.",
-    "Просимо не перемикатися: новини займуть трохи більше хвилини, і дуже скоро знову буде ваша улюблена музика.",
-])).splitlines() if x.strip()]
-PAUSE_BEFORE_MS = opt("pause_before_ms", "PAUSE_BEFORE_MS", 450)  # тиша після новини перед перебивкою
-PAUSE_AFTER_MS = opt("pause_after_ms", "PAUSE_AFTER_MS", 250)     # тиша після перебивки перед наступною новиною
-PAUSE_PLAIN_MS = opt("pause_plain_ms", "PAUSE_PLAIN_MS", 700)     # пауза там, де перебивки немає
+PAUSE_BEFORE_MS = opt("pause_before_ms", "PAUSE_BEFORE_MS", 300)  # тиша після новини перед перебивкою
+PAUSE_AFTER_MS = opt("pause_after_ms", "PAUSE_AFTER_MS", 150)     # тиша після перебивки перед наступною новиною
+PAUSE_PLAIN_MS = opt("pause_plain_ms", "PAUSE_PLAIN_MS", 500)     # пауза там, де перебивки немає
 WEATHER_ENABLED = opt("weather_enabled", "WEATHER_ENABLED", True)
 WEATHER_WHERE = opt("weather_where", "WEATHER_WHERE", "у Києві")
 WEATHER_LAT = opt("lat", "WEATHER_LAT", 50.45)
 WEATHER_LON = opt("lon", "WEATHER_LON", 30.52)
 SQUALL_MS = opt("squall_ms", "SQUALL_MS", float(weather.SQUALL_MS))  # пориви, від яких згадуємо шквал
 DONATE_URL = opt("donate_url", "DONATE_URL", "https://keksfm.kiev.ua")
-DONATE_ENABLED = opt("donate_enabled", "DONATE_ENABLED", True)        # ненав'язливий заклик у кінці випуску
 TELEGRAM_ENABLED = opt("telegram_enabled", "TELEGRAM_ENABLED", True)  # згадка телеграм-каналу в мові ведучих
 TELEGRAM_NAME = opt("telegram_name", "TELEGRAM_NAME", "Кекс-ньюс")
 WEATHER_LEAD = opt("weather_lead", "WEATHER_LEAD",
@@ -121,10 +111,10 @@ STATION_SPOKEN = opt("station_spoken", "STATION_SPOKEN", "Служба нови�
 _STRESS = "(a capitalized vowel in the middle of a word marks the stressed vowel)"
 _SERIOUS = ("Our country is at war: for attacks, explosions, casualties and deaths speak gravely, slowly, with a "
             "heavy restrained tone. Crisp Ukrainian diction, pronounce every ending in full, correct word stress "
-            + _STRESS + ", and leave a long, clear pause of about two seconds after each separate item:")
+            + _STRESS + ", and leave a clear pause of about one second after each separate item:")
 NAME_1 = opt("host1_name", "HOST1_NAME", "Ангеліна")
 VOICE_1 = opt("host1_voice", "HOST1_VOICE", "Zephyr")  # тимчасово; остаточний вибір — за прослуховуванням voice_samples.py
-SPEED_1 = opt("host1_speed", "HOST1_SPEED", 0.95)
+SPEED_1 = opt("host1_speed", "HOST1_SPEED", 1.0)
 PITCH_1 = opt("host1_pitch", "HOST1_PITCH", 0.0)     # півтони: підвищення робить голос дитячим, тому за замовчуванням 0
 STYLE_1 = opt("host1_style", "HOST1_STYLE",
               "Read as Angelina, a 19-year-old young woman, radio news host: a feminine, clear, bright voice in a "
@@ -132,7 +122,7 @@ STYLE_1 = opt("host1_style", "HOST1_STYLE",
               "composed, firm newsroom delivery, no smiling and no softness. " + _SERIOUS)
 NAME_2 = opt("host2_name", "HOST2_NAME", "Лера")
 VOICE_2 = opt("host2_voice", "HOST2_VOICE", "Kore")  # Firm — рівний, зібраний голос
-SPEED_2 = opt("host2_speed", "HOST2_SPEED", 0.95)
+SPEED_2 = opt("host2_speed", "HOST2_SPEED", 1.0)
 PITCH_2 = opt("host2_pitch", "HOST2_PITCH", 0.0)
 STYLE_2 = opt("host2_style", "HOST2_STYLE",
               "Read as Lera, a radio news host with a natural, beautiful, clear voice, but a SERIOUS, composed, firm "
@@ -217,44 +207,60 @@ def is_substantial(clean: str) -> bool:
     return len(parts) >= MIN_SENTENCES
 
 
-async def fetch_posts(prev_keys: frozenset = frozenset()):
+def _split_channels(value: str) -> list[str]:
+    return [c.strip() for c in value.split(",") if c.strip()]
+
+
+async def _read_channels(client, channels: list[str]):
+    cand, skipped = [], 0
+    for channel in channels:
+        async for msg in client.iter_messages(channel, limit=80):
+            if not msg.text:  # пост без тексту (самі картинка/відео)
+                continue
+            clean = clean_post(msg.text)
+            if not is_substantial(clean):
+                skipped += 1
+                continue
+            cand.append({"key": f"{channel}:{msg.id}", "date": msg.date, "text": clean[:900]})
+    return cand, skipped
+
+
+async def fetch_posts(covered: frozenset = frozenset()):
     """Повертає (тексти, ключі, режим, дата найновішого посту).
-    Режим fresh — нові пости за останні NEWS_WINDOW_MIN хвилин (без тих, що вже звучали в попередньому випуску).
-    Режим repeat — нового немає: беремо останні NEWS_WINDOW_MIN хвилин новин ДО найновішого посту каналу."""
+    fresh — нові пости ОСНОВНОГО каналу за останні NEWS_WINDOW_MIN хвилин (без тих, що вже звучали);
+    reserve — в основному нічого нового, беремо так само з РЕЗЕРВНОГО каналу;
+    none — нового немає ніде: випуск пропускається (повторів немає)."""
     client = TelegramClient(
         StringSession(os.environ["TG_SESSION"]),
         int(os.environ["TG_API_ID"]),
         os.environ["TG_API_HASH"],
     )
-    if not CHANNELS.strip():
-        raise SystemExit("Не задано канали-джерела (панель: Настройки -> Источники, або секрет TG_CHANNELS)")
-    cand, skipped = [], 0
+    primary, reserve = _split_channels(CHANNELS), _split_channels(RESERVE_CHANNELS)
+    if not primary:
+        raise SystemExit("Не задано основний канал-джерело (панель: Источники, або секрет TG_CHANNELS)")
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=NEWS_WINDOW_MIN)
+
+    def fresh(c):
+        return c["date"] >= cutoff and not (DEDUPE and c["key"] in covered)
+
     async with client:
-        for channel in [c.strip() for c in CHANNELS.split(",") if c.strip()]:
-            async for msg in client.iter_messages(channel, limit=80):
-                if not msg.text:  # пост без тексту (самі картинка/відео)
-                    continue
-                clean = clean_post(msg.text)
-                if not is_substantial(clean):
-                    skipped += 1
-                    continue
-                cand.append({"key": f"{channel}:{msg.id}", "date": msg.date, "text": clean[:900]})
-    window = timedelta(minutes=NEWS_WINDOW_MIN)
-    cutoff = datetime.now(timezone.utc) - window
-    fresh = [c for c in cand if c["date"] >= cutoff and not (DEDUPE and c["key"] in prev_keys)]
-    mode, chosen = "fresh", fresh
-    if not fresh:
-        if REPEAT_WHEN_EMPTY and cand:
-            newest = max(c["date"] for c in cand)
-            chosen = [c for c in cand if c["date"] >= newest - window]
-            mode = "repeat"
-        else:
+        cand, skipped = await _read_channels(client, primary)
+        chosen, mode = [c for c in cand if fresh(c)], "fresh"
+        print(f"Основний канал {', '.join(primary)}: нових за {NEWS_WINDOW_MIN} хв — {len(chosen)}")
+        if not chosen and reserve:
+            print(f"В основному немає нового — читаю резервний: {', '.join(reserve)}")
+            rcand, rskipped = await _read_channels(client, reserve)
+            skipped += rskipped
+            chosen = [c for c in rcand if fresh(c)]
+            mode = "reserve" if chosen else "none"
+            print(f"Резервний канал: нових за {NEWS_WINDOW_MIN} хв — {len(chosen)}")
+        elif not chosen:
             mode = "none"
     chosen.sort(key=lambda c: c["date"], reverse=True)
     chosen = chosen[:MAX_POSTS]
     newest_dt = max((c["date"] for c in chosen), default=None)
-    print(f"Новини: режим={mode}, відібрано {len(chosen)}, нових за {NEWS_WINDOW_MIN} хв: {len(fresh)}, "
-          f"відсіяно порожніх/коротких: {skipped}" + (f", найновіший пост: {newest_dt:%d.%m %H:%M} UTC" if newest_dt else ""))
+    print(f"Новини: режим={mode}, відібрано {len(chosen)}, відсіяно порожніх/коротких: {skipped}"
+          + (f", найновіший пост: {newest_dt:%d.%m %H:%M} UTC" if newest_dt else ""))
     return [c["text"] for c in chosen], [c["key"] for c in chosen], mode, newest_dt
 
 
@@ -487,27 +493,6 @@ def valid_telegram(text: str) -> bool:
             and not NO_TIME_RE.search(text))
 
 
-# Донат: дві дослівні формули чергуються від випуску до випуску. Адресу сайту не вимовляємо.
-DONATE_VARIANTS = [
-    [  # 0 — чашечка кави
-        "Якщо ви хочете підтримати нас чашечкою кави, це можна зробити за посиланням на нашому сайті.",
-        "А підтримати нас чашечкою кави можна за посиланням на нашому сайті.",
-        "Будемо вдячні, якщо захочете підтримати нас чашечкою кави, за посиланням на нашому сайті.",
-    ],
-    [  # 1 — фінансово порадувати
-        "Можете трошки фінансово нас порадувати, якщо вам подобається наша робота, за посиланням на нашому сайті.",
-        "Хочете трошки фінансово нас порадувати, якщо вам подобається наша робота? Це можна зробити за посиланням на нашому сайті.",
-        "Є й такий спосіб: трошки фінансово нас порадувати, якщо вам подобається наша робота, за посиланням на нашому сайті.",
-    ],
-]
-
-
-def pick_donate(last_variant) -> tuple[str, int]:
-    """Наступна за чергою формула: після 0 — 1, після 1 — 0; (текст, номер формули)."""
-    v = 1 - last_variant if last_variant in (0, 1) else 0
-    return random.choice(DONATE_VARIANTS[v]), v
-
-
 def spoken(text: str) -> str:
     """Текст для озвучки: назву станції пишемо з наголосами (велика голосна = наголос)."""
     return re.sub(re.escape(STATION), STATION_SPOKEN, text, flags=re.I)
@@ -573,13 +558,26 @@ def _retry_after(e) -> float | None:
     return float(m.group(1)) if m else None
 
 
+def _truncated(pcm: bytes, used: list[str]) -> bool:
+    """Озвучення помітно коротше, ніж можливо для такого тексту (модель «з'їла» частину) — вважаємо збоєм.
+    Нормальна мова ≈ 12–16 символів за секунду; поріг навмисно дуже обережний."""
+    chars = sum(len(t) for t in used)
+    return chars > 200 and (len(pcm) / 48000) < 0.55 * chars / 16.0
+
+
 def gemini_tts_pcm(texts: list[str], kinds: list[str], voice: str, style: str, budget_s: float | None = None):
     """Озвучення всього випуску одним запитом. Запасного голосу НЕМАЄ: при збоях бот повторює запит із
-    зростаючими паузами (20 → 120 с), чергуючи найкращі моделі, доки не мине TTS_RETRY_MIN хвилин або не буде
-    TTS_MAX_ATTEMPTS спроб. 429 — чекаємо щонайменше хвилину (ліміт за хвилину); добова квота моделі вичерпана —
-    модель відкладаємо; 400/403/404 — модель недоступна. Повертає (PCM 24 кГц 16 біт моно, фрази, типи)."""
-    used, used_kinds = fit_bytes(texts, kinds, TTS_MAX_BYTES - len(style.encode()) - 4)
-    script = style + "\n\n" + "\n\n".join(used)
+    зростаючими паузами (20 → 120 с), чергуючи найкращі моделі, доки не мине бюджет часу або не буде
+    TTS_MAX_ATTEMPTS спроб. 429 — чекаємо щонайменше хвилину; добова квота моделі вичерпана — модель відкладаємо;
+    400 «завеликий текст» — скорочуємо запит; інші 4xx — модель недоступна; обрізане аудіо — повторюємо.
+    Повертає (PCM 24 кГц 16 біт моно, озвучені фрази, їхні типи)."""
+    cap = TTS_MAX_BYTES
+
+    def prepare(limit):
+        used, used_kinds = fit_bytes(texts, kinds, limit - len(style.encode()) - 4)
+        return used, used_kinds, style + "\n\n" + "\n\n".join(used)
+
+    used, used_kinds, script = prepare(cap)
     client = _client()
     cfg = genai_types.GenerateContentConfig(
         response_modalities=["AUDIO"],
@@ -591,7 +589,7 @@ def gemini_tts_pcm(texts: list[str], kinds: list[str], voice: str, style: str, b
     )
     deadline = time.monotonic() + (TTS_RETRY_MIN * 60 if budget_s is None else budget_s)
     dead: set[str] = set()
-    attempt, errors = 0, []
+    attempt, shrinks, errors = 0, 0, []
     while attempt < TTS_MAX_ATTEMPTS and (attempt == 0 or time.monotonic() < deadline):  # перша спроба — завжди
         models = [m for m in TTS_MODELS if m not in dead]
         if not models:
@@ -605,12 +603,21 @@ def gemini_tts_pcm(texts: list[str], kinds: list[str], voice: str, style: str, b
                 raise ValueError("порожня відповідь без аудіо")
             if len(pcm) / (24000 * 2) < 3:
                 raise ValueError(f"аудіо підозріло коротке: {len(pcm) / 48000:.1f} с")
-            print(f"Gemini TTS: готово ({model}, спроба {attempt})")
+            if _truncated(pcm, used):
+                raise ValueError(f"аудіо обрізане: {len(pcm) / 48000:.0f} с на {sum(len(t) for t in used)} символів")
+            print(f"Gemini TTS: готово ({model}, спроба {attempt}, {len(pcm) / 48000:.0f} с)")
             return pcm, used, used_kinds
         except (genai_errors.ServerError, genai_errors.ClientError, *TRANSPORT_ERRORS,
                 ValueError, IndexError, AttributeError) as e:
             code = getattr(e, "code", None) or type(e).__name__
             errors.append(f"{model}:{code}")
+            if (isinstance(e, genai_errors.ClientError) and code == 400 and shrinks < 3
+                    and re.search(r"too long|exceed|token|length|size|limit|maximum|large", str(e), re.I)):
+                shrinks += 1
+                cap = int(min(cap, len(script.encode())) * 0.6)  # від фактичного розміру запиту, а не від стелі
+                used, used_kinds, script = prepare(cap)
+                print(f"Gemini TTS {model}: текст завеликий для запиту, скорочую до {cap} байт і повторюю")
+                continue
             if isinstance(e, genai_errors.ClientError) and code != 429:
                 dead.add(model)
                 print(f"Gemini TTS {model}: помилка {code}, модель недоступна")
@@ -634,8 +641,8 @@ def gemini_tts_pcm(texts: list[str], kinds: list[str], voice: str, style: str, b
 
 async def make_audio(texts: list[str], kinds: list[str], host: dict, out_path: str, pack: str | None = None,
                      budget_s: float | None = None):
-    """texts/kinds: привітання, новини..., погода, телеграм, донат, прощання. Повертає секунди або None,
-    якщо якісної озвучки отримати не вдалося (тоді main повторить попередній випуск)."""
+    """texts/kinds: привітання, новини..., погода, телеграм, прощання. Повертає (секунди, озвучені фрази,
+    їхні типи) або None, якщо якісної озвучки отримати не вдалося (тоді main повторить попередній випуск)."""
     try:
         pcm, used, used_kinds = await asyncio.to_thread(gemini_tts_pcm, texts, kinds, host["gemini"], host["style"], budget_s)
     except TTSUnavailable as e:
@@ -671,7 +678,7 @@ async def make_audio(texts: list[str], kinds: list[str], host: dict, out_path: s
                            JINGLE_GAIN_DB, STING_GAIN_DB, gap_ms=PAUSE_PLAIN_MS, weather_sting=wsting,
                            pre_ms=PAUSE_BEFORE_MS, post_ms=PAUSE_AFTER_MS)
     radio.export_mp3(track, out_path, MP3_BITRATE)
-    return len(track) / radio.SR
+    return len(track) / radio.SR, used, used_kinds
 
 
 def air_time(now: datetime) -> datetime:
@@ -696,32 +703,26 @@ async def main() -> None:
             wsum = weather.summarize(weather.fetch(WEATHER_LAT, WEATHER_LON), squall_ms=SQUALL_MS)
         except Exception as e:
             print("Погода недоступна, випуск буде без неї:", repr(e)[:200])
-    posts, keys, mode, newest = await fetch_posts(frozenset(last.get("posts", [])))
+    posts, keys, mode, newest = await fetch_posts(frozenset(feed.covered_keys(site_dir)))
     if not posts:
-        print("У каналах немає жодних придатних постів, пропускаю випуск.")
+        print("Нових матеріалів немає ні в основному, ні в резервному каналі: випуск пропущено (повторів не робимо).")
         return
     ctx = make_context(air, host, wsum)
     intro, items, outro, wtext, tg = summarize(posts, ctx, wsum)
     if not items:
         print("Gemini не повернув новин, пропускаю.")
         return
-    dn, dn_variant = pick_donate(last.get("donate")) if DONATE_ENABLED else (None, None)
     texts, kinds = [intro], ["intro"]
-    if STAY_ENABLED and STAY_LINES:  # після привітання: коротко просимо не перемикатися
-        texts.append(random.choice(STAY_LINES)); kinds.append("stay")
     texts += items; kinds += ["news"] * len(items)
     if wtext:
         texts.append(wtext); kinds.append("weather")
-    if tg:  # наприкінці випуску, у мові ведучих: телеграм-канал, потім ненав'язливий донат, потім прощання
+    if tg:  # наприкінці випуску, у мові ведучих: телеграм-канал, потім прощання
         texts.append(tg); kinds.append("tg")
-    if dn:
-        texts.append(dn); kinds.append("donate")
     texts.append(outro); kinds.append("outro")
     print(f"Ведуча: {host['name']} (попередній випуск вела: №{last.get('host', '—')}); пакет звуків: {pack}")
     print(f"Привітання: {intro}")
     print(f"Погода: {wtext}")
     print(f"Телеграм: {tg}")
-    print(f"Донат (формула №{dn_variant}): {dn}")
     print(f"Прощання: {outro}")
     title = f"Новини {air:%d.%m %H:00}"
     cfg = {
@@ -733,44 +734,49 @@ async def main() -> None:
         "donate_url": DONATE_URL,
         "weather_credit": bool(wtext),
     }
-    out = "episode.mp3"
     # бюджет повторів до Gemini: не довше TTS_RETRY_MIN і не пізніше ніж за TTS_AIR_MARGIN_MIN хвилин до ефіру
     to_air = (air - datetime.now(ZoneInfo("Europe/Kyiv"))).total_seconds()
     budget = max(0.0, min(TTS_RETRY_MIN * 60, to_air - TTS_AIR_MARGIN_MIN * 60))
     print(f"Бюджет часу на озвучку Gemini: {budget / 60:.0f} хв (до ефіру {to_air / 60:.0f} хв)")
-    dur = await make_audio([spoken(t) for t in texts], kinds, host, out, pack, budget)
+    out = "episode.mp3"
+    result = await make_audio([spoken(t) for t in texts], kinds, host, out, pack, budget)
     gh_out = os.environ.get("GITHUB_OUTPUT")
 
-    def mark_published():
+    def mark_published(fname: str):
         if gh_out:
             with open(gh_out, "a", encoding="utf-8") as f:
-                f.write("published=true\n")
+                f.write(f"published=true\naudio_file={fname}\n")
 
-    if dur is None:  # якісної озвучки немає — краще повторити попередній випуск, ніж пустити поганий голос
+    if result is None:  # якісної озвучки немає — краще повторити попередній випуск, ніж пустити поганий голос
         src = feed.latest_episode(site_dir)
         if not src:
             print("::error::Озвучки немає, а попереднього випуску для повтору теж немає.")
             raise SystemExit(1)
-        feed.publish(site_dir, os.path.join(site_dir, src["file"]), f"{title} (повтор)",
-                     "Повтор попереднього випуску: нову якісну озвучку зараз отримати не вдалося.\n"
-                     + src.get("description", ""),
-                     int(src.get("duration", 0)), now, KEEP_EPISODES, cfg,
-                     meta={**(src.get("meta") or {}), "reused": True, "mode": "reuse"}, name_suffix="_r")
+        fname = feed.publish(site_dir, os.path.join(site_dir, src["file"]), f"{title} (повтор)",
+                             "Повтор попереднього випуску: нову якісну озвучку зараз отримати не вдалося.\n"
+                             + src.get("description", ""),
+                             int(src.get("duration", 0)), now, KEEP_EPISODES, cfg,
+                             meta={**(src.get("meta") or {}), "reused": True, "mode": "reuse"}, name_suffix="_r")
         print(f"Опубліковано повтор попереднього випуску ({src['file']}).")
-        mark_published()
+        mark_published(fname)
         return
+    dur, used, used_kinds = result
+    # В описі — лише те, що справді прозвучало (раніше опис будувався з усіх новин, навіть якщо озвучка їх не вмістила)
+    voiced_news = [t for t, k in zip(used, used_kinds) if k == "news"]
+    if len(voiced_news) < len(items):
+        print(f"::warning::Озвучено {len(voiced_news)} новин із {len(items)}: решта не вмістилась у запит і в опис не потрапила.")
     notes = [f"Ведуча: {host['name']}"]
-    if mode == "repeat":
-        notes.append("Нових матеріалів не було, повторюємо новини за останні години.")
-    notes += [f"• {l}" for l in items]
-    if wtext:
+    if mode == "reserve":
+        notes.append("Джерело новин: резервний канал.")
+    notes += [f"• {l}" for l in voiced_news]
+    if wtext and "weather" in used_kinds:
         notes.append(f"Погода: {wtext} (дані Open-Meteo.com)")
     if DONATE_URL:
         notes.append(f"Підтримати розвиток станції: {DONATE_URL}")
-    feed.publish(site_dir, out, title, "\n".join(notes), int(dur), now, KEEP_EPISODES, cfg,
-                 meta={"host": host["id"], "posts": keys, "mode": mode, "pack": pack, "donate": dn_variant})
-    print(f"Готово: {len(items)} новин ({mode}), {dur:.0f} с")
-    mark_published()
+    fname = feed.publish(site_dir, out, title, "\n".join(notes), int(dur), now, KEEP_EPISODES, cfg,
+                         meta={"host": host["id"], "posts": keys, "mode": mode, "pack": pack})
+    print(f"Готово: {len(voiced_news)} новин ({mode}), {dur:.0f} с, файл {fname}")
+    mark_published(fname)
 
 
 if __name__ == "__main__":
