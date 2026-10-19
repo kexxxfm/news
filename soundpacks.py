@@ -156,13 +156,7 @@ def build_standard(S, rng, build="riser", finish="hit", intro_extra=None, outro_
     buf = st(loop + 4 * SR)
     layers(buf, g, 0, n_bars, rng, prog, S.get("bed", S), 0.8)
     bed = G.fold_loop(buf, loop)
-    w = 2.2
-    while True:
-        y = G.finalize(R._widen(bed, w), -20)
-        if G._corr(y) >= 0.55 or w <= 1.0:
-            break
-        w -= 0.2
-    out["bed"] = y
+    out["bed"] = G.finalize(R._widen(bed, 2.6), -20)
     return out, g
 
 
@@ -408,13 +402,7 @@ def pack7(rng):
     groove(buf, 0, n_bars, 0.8, beat=True)
     ADD(buf, G.crackle(rng, n_bars * g.bar + 3.0, 6, 0.05), 0)
     bed = G.fold_loop(buf, loop)
-    w = 2.2
-    while True:
-        y = G.finalize(R._widen(bed, w), -20)
-        if G._corr(y) >= 0.55 or w <= 1.0:
-            break
-        w -= 0.2
-    out["bed"] = y
+    out["bed"] = G.finalize(R._widen(bed, 2.6), -20)
 
     # ПОГОДА
     w_ = st(3.4 * SR)
@@ -443,9 +431,28 @@ REGISTRY = {
 PACK_NAMES = list(REGISTRY)
 
 
+_TARGETS = {"intro": -17, "outro": -17, "st": -19, "weather": -20, "bed": -20}
+
+
+def wow_pack(a: dict) -> dict:
+    """«Вау»-версія пакета: рух по панорамі, відскоки ліво-право, сильна стереобаза. Рівні вирівнюються заново."""
+    def fin(x, key, trim=True):
+        y = R.normalize(x.astype(np.float32), _TARGETS[key], 0.89)
+        return R.trim_silence(y, -55, 140) if trim else y
+    return {
+        "intro": fin(G.wow(a["intro"], "intro"), "intro"),
+        "outro": fin(G.wow(a["outro"], "outro"), "outro"),
+        "st1": fin(G.wow(a["st1"], "sting", 0), "st"),
+        "st2": fin(G.wow(a["st2"], "sting", 1), "st"),
+        "st3": fin(G.wow(a["st3"], "sting", 2), "st"),
+        "weather": fin(G.wow(a["weather"], "weather"), "weather"),
+        "bed": fin(G.wow(a["bed"], "bed"), "bed", trim=False),
+    }
+
+
 def build_pack(name: str) -> dict:
-    """Збирає пакет за назвою (детерміновано, ~1-3 с). Повертає ключі як у radio.load_assets."""
+    """Збирає пакет за назвою (детерміновано, ~1-4 с) з «вау»-обробкою. Ключі — як у radio.load_assets."""
     fn, seed = REGISTRY[name]
-    a = fn(np.random.default_rng(seed))
+    a = wow_pack(fn(np.random.default_rng(seed)))
     return {"open": [a["intro"]], "close": [a["outro"]], "sting": [a["st1"], a["st2"], a["st3"]],
             "weather": [a["weather"]], "bed": [a["bed"]]}
