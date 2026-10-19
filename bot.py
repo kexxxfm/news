@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 from google import genai
 from google.genai import errors as genai_errors
 from google.genai import types as genai_types
+import numpy as np
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 
@@ -109,7 +110,7 @@ VOICE_DB = -19.0
 # Ведучі (дві жінки), чергуються: завжди береться «наступна» після тієї, що вела попередній випуск.
 STATION_SPOKEN = opt("station_spoken", "STATION_SPOKEN", "Служба новин кекс рАдіо-кОмпані")  # велика голосна = наголос
 _STRESS = "(a capitalized vowel in the middle of a word marks the stressed vowel)"
-_SERIOUS = ("Our country is at war: for attacks, explosions, casualties and deaths speak gravely, slowly, with a "
+_SERIOUS = ("Our country is at war: for attacks, explosions, casualties and deaths speak gravely, with a "
             "heavy restrained tone. Crisp Ukrainian diction, pronounce every ending in full, correct word stress "
             + _STRESS + ", and leave a clear pause of about one second after each separate item:")
 NAME_1 = opt("host1_name", "HOST1_NAME", "Ангеліна")
@@ -120,13 +121,14 @@ STYLE_1 = opt("host1_style", "HOST1_STYLE",
               "Read as Angelina, a 19-year-old young woman, radio news host: a feminine, clear, bright voice in a "
               "higher female register, but mature, confident and NOT childish, not a girl's voice; a SERIOUS, "
               "composed, firm newsroom delivery, no smiling and no softness. " + _SERIOUS)
-NAME_2 = opt("host2_name", "HOST2_NAME", "Лера")
-VOICE_2 = opt("host2_voice", "HOST2_VOICE", "Kore")  # Firm — рівний, зібраний голос
+NAME_2 = opt("host2_name", "HOST2_NAME", "Лєра")
+VOICE_2 = opt("host2_voice", "HOST2_VOICE", "Aoede")  # Breezy — легший, молодший за Kore; остаточний вибір — за voice_samples.py
 SPEED_2 = opt("host2_speed", "HOST2_SPEED", 1.0)
-PITCH_2 = opt("host2_pitch", "HOST2_PITCH", 0.0)
+PITCH_2 = opt("host2_pitch", "HOST2_PITCH", 0.5)  # трохи вище = молодше (без дитячості)
 STYLE_2 = opt("host2_style", "HOST2_STYLE",
-              "Read as Lera, a radio news host with a natural, beautiful, clear voice, but a SERIOUS, composed, firm "
-              "newsroom delivery, no smiling and no softness. " + _SERIOUS)
+              "Read as Lyera, a young woman of about 22, radio news host: a fresh, young, pleasant and clear voice, "
+              "confident and NOT childish; a SERIOUS, composed, firm newsroom delivery, no smiling and no softness. "
+              + _SERIOUS)
 STATION = opt("station", "STATION", "Служба новин Кекс-радіокомпані")  # у тексті; вимовляється як STATION_SPOKEN
 
 PROMPT = """Ти — редакторка і ведуча випуску новин молодіжного танцювального радіо Кекс ФМ.
@@ -134,7 +136,7 @@ PROMPT = """Ти — редакторка і ведуча випуску нов�
 (можуть бути російською або українською).
 
 ЗАВДАННЯ 1 — новини. Для кожної окремої новини напиши ОДНЕ коротке речення українською,
-без вигадування фактів. Дублікати об'єднуй. Пропускай рекламу, заклики підписатися,
+без вигадування фактів. Дублікати об'єднуй, але НЕ пропускай жодної окремої події: речень має бути стільки, скільки різних подій у постах. Пропускай рекламу, заклики підписатися,
 надіслати новину, донатити, службові підписи та пости без новинного змісту.
 
 МОВА (обов'язково): якщо пост російською — переклади його зміст на українську.
@@ -558,11 +560,38 @@ def _retry_after(e) -> float | None:
     return float(m.group(1)) if m else None
 
 
-def _truncated(pcm: bytes, used: list[str]) -> bool:
-    """Озвучення помітно коротше, ніж можливо для такого тексту (модель «з'їла» частину) — вважаємо збоєм.
-    Нормальна мова ≈ 12–16 символів за секунду; поріг навмисно дуже обережний."""
-    chars = sum(len(t) for t in used)
-    return chars > 200 and (len(pcm) / 48000) < 0.55 * chars / 16.0
+MAX_INNER_SILENCE_S = 6.0  # довша внутрішня тиша в озвученні — це збій Gemini, а не пауза
+
+
+def _audio_problem(pcm: bytes, used: list[str]) -> str | None:
+    """Чи не збійне озвучення? Повертає причину або None. Ловить: надто коротке (обрізане), надто довге
+    для такого тексту (напр. 351 с на півтори хвилини тексту) і довгі «мертві» тиші всередині."""
+    x = np.frombuffer(pcm, dtype="<i2").astype(np.float32) / 32768.0
+    dur = len(x) / 24000
+    chars, n_items = sum(len(t) for t in used), len(used)
+    if dur < 3:
+        return f"аудіо підозріло коротке: {dur:.1f} с"
+    if chars > 200 and dur < 0.55 * chars / 16.0:
+        return f"аудіо обрізане: {dur:.0f} с на {chars} символів"
+    max_dur = chars / 7.0 + 4.0 * n_items + 10  # дуже щедра межа: ~7 символів/с + 4 с на фразу
+    if chars > 100 and dur > max_dur:
+        return f"аудіо задовге: {dur:.0f} с на {chars} символів (очікується не більше {max_dur:.0f} с)"
+    fr = 240  # кадри по 10 мс
+    nf = len(x) // fr
+    rms = np.sqrt((x[: nf * fr].reshape(nf, fr) ** 2).mean(axis=1))
+    active = rms[rms > 10 ** (-50 / 20)]
+    if len(active) == 0:
+        return "суцільна тиша"
+    ref = 20 * np.log10(np.sqrt(np.mean(active ** 2)) + 1e-12)
+    loud = np.where(rms >= 10 ** ((ref - 28) / 20))[0]
+    inner = rms[loud[0]: loud[-1] + 1] < 10 ** ((ref - 28) / 20)
+    longest = run = 0
+    for q in inner:
+        run = run + 1 if q else 0
+        longest = max(longest, run)
+    if longest * 0.01 > MAX_INNER_SILENCE_S:
+        return f"у озвученні тиша {longest * 0.01:.0f} с"
+    return None
 
 
 def gemini_tts_pcm(texts: list[str], kinds: list[str], voice: str, style: str, budget_s: float | None = None):
@@ -603,9 +632,10 @@ def gemini_tts_pcm(texts: list[str], kinds: list[str], voice: str, style: str, b
                 raise ValueError("порожня відповідь без аудіо")
             if len(pcm) / (24000 * 2) < 3:
                 raise ValueError(f"аудіо підозріло коротке: {len(pcm) / 48000:.1f} с")
-            if _truncated(pcm, used):
-                raise ValueError(f"аудіо обрізане: {len(pcm) / 48000:.0f} с на {sum(len(t) for t in used)} символів")
-            print(f"Gemini TTS: готово ({model}, спроба {attempt}, {len(pcm) / 48000:.0f} с)")
+            problem = _audio_problem(pcm, used)
+            if problem:
+                raise ValueError(problem)
+            print(f"Gemini TTS: готово ({model}, спроба {attempt}, {len(pcm) / 48000:.0f} с на {sum(len(t) for t in used)} символів)")
             return pcm, used, used_kinds
         except (genai_errors.ServerError, genai_errors.ClientError, *TRANSPORT_ERRORS,
                 ValueError, IndexError, AttributeError) as e:
@@ -649,6 +679,10 @@ async def make_audio(texts: list[str], kinds: list[str], host: dict, out_path: s
         print(f"::warning::Якісної озвучки Gemini отримати не вдалося ({e}). Запасного голосу немає.")
         return None
     voice = radio.normalize(radio.decode_pcm16(pcm, 24000, host["speed"], host["pitch"]), VOICE_DB)
+    before = len(voice) / radio.SR
+    voice = radio.compress_silences(voice)  # довгі «зависання» Gemini стискаємо до півтори секунди
+    if before - len(voice) / radio.SR > 1:
+        print(f"Скорочено довгі тиші в озвученні: {before:.0f} с -> {len(voice) / radio.SR:.0f} с")
     parts, gaps = radio.split_by_pauses(voice, len(used))
     if parts is None:
         print(f"Озвучення не вдалося розрізати на {len(used)} частин (знайдені паузи, мс: {gaps}); "
