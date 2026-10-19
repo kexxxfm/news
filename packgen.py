@@ -163,9 +163,8 @@ def crackle(rng, d, density=7.0, vol=0.05):
     return hiss + clicks
 
 
-def master(x, target, widen=1.25, min_corr=0.3):
-    """Фінішна обробка. Розширення бази автоматично зменшується, поки канали не стануть
-    досить сумісними з моно (щоб звук не «зникав» на телефоні й радіоприймачі)."""
+def master(x, target, widen=1.25, min_corr=-1.0):
+    """Фінішна обробка. Сумісність із моно більше не обмежуємо (слухають у стерео): min_corr=-1 вимикає обмежувач."""
     w = widen
     while True:
         y = R._finish(x.copy(), target, widen=w)
@@ -186,3 +185,98 @@ def fold_loop(buf, loop_n):
     tail = buf[loop_n:]
     out[: len(tail)] += tail[: len(out)]
     return out
+
+
+# ------------------------------------------------------------------ «вау»-ефекти: рух по панорамі й обʼєм
+def _lp0(x, fc, order=4):
+    """Фільтр низьких частот з нульовою фазою (прохід уперед і назад): його доповнення (x - lp0) —
+    чистий фільтр високих без фазового зсуву, тому віднімання басу працює точно."""
+    sos = signal.butter(order, fc, btype="low", fs=SR, output="sos")
+    return signal.sosfiltfilt(sos, x, axis=0)
+
+
+def split_low(x, fc=170):
+    """Бас (нижче fc) суворо по центру: нижче fc лишаємо лише «середнє» (L+R)/2. Вище fc — окремо
+    «середнє» і «бокове», щоб розширення не розфазовувало бас."""
+    mid = ((x[:, 0] + x[:, 1]) / 2).astype(np.float64)
+    side = ((x[:, 0] - x[:, 1]) / 2).astype(np.float64)
+    low = _lp0(mid, fc)
+    mid_hi = mid - low
+    side_hi = side - _lp0(side, fc)
+    low2 = np.stack([low, low], 1).astype(np.float32)
+    high = np.stack([mid_hi + side_hi, mid_hi - side_hi], 1).astype(np.float32)
+    return low2, high
+
+
+def balance(x, pan):
+    """Панорамування рухом: pan від -1 (лише ліво) до +1 (лише право), по відліках."""
+    pan = np.clip(pan, -1, 1)
+    left, right = 1 - np.maximum(0, pan), 1 + np.minimum(0, pan)
+    return np.stack([x[:, 0] * left, x[:, 1] * right], 1).astype(np.float32)
+
+
+def ricochet(high, taps=7, first=0.07, spacing=0.085, decay=0.66, start_left=True):
+    """Відскок звуку між каналами: кожне повторення різко стрибає ліво <-> право і темнішає."""
+    mono = high.mean(axis=1)
+    n = len(mono)
+    out = np.zeros((n + int((first + taps * spacing) * SR) + 1, 2), np.float32)
+    side = -1.0 if start_left else 1.0
+    for k in range(taps):
+        d = int((first + k * spacing) * SR)
+        pan = side * (-1) ** k
+        src = R._lp(mono, max(2500, 9000 - 900 * k)) * decay ** (k + 1)
+        out[d:d + n, 0] += src * (1 - max(0, pan))
+        out[d:d + n, 1] += src * (1 + min(0, pan))
+    return out
+
+
+def mono_bass(x, fc=160):
+    """Прибирає з бічної складової все нижче fc: бас суворо моно (без розфазування), решта — широка."""
+    side = ((x[:, 0] - x[:, 1]) / 2).astype(np.float64)
+    lf = _lp0(side, fc).astype(np.float32)
+    return np.stack([x[:, 0] - lf, x[:, 1] + lf], 1).astype(np.float32)
+
+
+def _wow_raw(x, kind, idx=0):
+    """Додає стерео-«вау»: рух по панорамі, відскоки ліво-право і сильне розширення бази (бас лишається по центру).
+    kind: sting | intro | outro | weather | bed."""
+    n = len(x)
+    u = np.arange(n) / n
+    dur = n / SR
+    low, high = split_low(x)
+    if kind == "sting":  # перебивки: звук пролітає з боку в бік і відскакує
+        mode = idx % 3
+        pan = (np.linspace(-1, 1, n), np.linspace(1, -1, n), np.sin(2 * np.pi * 1.5 * u))[mode]
+        h = balance(R._widen(high, 2.6), pan * 0.95)
+        ric = ricochet(h, start_left=(mode != 0))
+        out = np.zeros_like(ric)
+        out[:n] += low + h
+        return out + ric * 0.5
+    if kind in ("intro", "outro"):  # інтро/аутро: нарощування «пролітає» через усе поле, далі повільне хитання
+        pan = 0.6 * np.sin(2 * np.pi * 0.4 * dur * u)
+        k = int(n * 0.22)
+        pan[:k] = np.linspace(-1, 1, k) * 0.9
+        h = balance(R._widen(high, 2.0), pan)
+        t0 = max(0, n - int(2.2 * SR))
+        tail = np.zeros_like(h)
+        tail[t0:] = h[t0:]
+        ric = ricochet(tail, taps=6, spacing=0.11, decay=0.7, start_left=(kind == "intro"))
+        out = np.zeros_like(ric)
+        out[:n] += low + h
+        return out + ric * 0.45
+    if kind == "weather":  # перебивка погоди: «крапельки» кружляють навколо слухача
+        pan = 0.85 * np.sin(2 * np.pi * 1.4 * dur * u)
+        h = balance(R._widen(high, 2.6), pan)
+        ric = ricochet(h, taps=6, spacing=0.12, decay=0.68)
+        out = np.zeros_like(ric)
+        out[:n] += low + h
+        return out + ric * 0.45
+    # bed: повільне хитання, ціле число циклів на петлю (шва немає); під голосом руху небагато
+    cycles = max(1, round(dur * 0.22))
+    pan = 0.4 * np.sin(2 * np.pi * cycles * u)
+    return (low + balance(R._widen(high, 2.6), pan)).astype(np.float32)
+
+
+def wow(x, kind, idx=0):
+    """Стерео-«вау» (рух по панорамі, відскоки ліво-право, сильна база) + бас суворо по центру."""
+    return mono_bass(_wow_raw(x, kind, idx))
