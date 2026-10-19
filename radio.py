@@ -91,6 +91,35 @@ def trim_silence(x: np.ndarray, thresh_db: float = -48, keep_ms: int = 70) -> np
     return x[a:b]
 
 
+def compress_silences(x: np.ndarray, max_ms: int = 1400, min_run_ms: int = 2000, rel_db: float = -28.0) -> np.ndarray:
+    """Скорочує надто довгі внутрішні тиші (Gemini інколи «зависає» на десятки секунд) до max_ms.
+    Тиша — кадри (10 мс) тихіші за середній рівень мови на rel_db. Початок і кінець не чіпаємо."""
+    r_ = _frame_rms(x)
+    act = r_[r_ > 10 ** (-50 / 20)]
+    if len(act) == 0:
+        return x
+    ref = 20 * np.log10(np.sqrt(np.mean(act ** 2)) + 1e-12)
+    quiet = r_ < 10 ** ((ref + rel_db) / 20)
+    n, run_min, keep_n = len(r_), min_run_ms // 10, max_ms // 10
+    keep = np.ones(n, bool)
+    i = 0
+    while i < n:
+        if quiet[i]:
+            j = i
+            while j < n and quiet[j]:
+                j += 1
+            if j - i >= run_min and i > 0 and j < n:  # лише внутрішні тиші
+                half = keep_n // 2
+                keep[i + half: j - (keep_n - half)] = False
+            i = j
+        else:
+            i += 1
+    if keep.all():
+        return x
+    body = x[: n * FRAME].reshape((n, FRAME) + x.shape[1:])[keep].reshape((-1,) + x.shape[1:])
+    return np.concatenate([body, x[n * FRAME:]]).astype(np.float32)
+
+
 def split_by_pauses(x: np.ndarray, parts: int, min_gap_ms: int = 250, edge_ms: int = 600, min_item_gap_ms: int = 500):
     """Ріже озвучення на `parts` шматків по найдовших паузах. Повертає (шматки, довжини пауз)
     або (None, []) якщо достатньо виразних пауз не знайдено."""
