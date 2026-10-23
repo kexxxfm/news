@@ -58,6 +58,7 @@ def opt(key: str, env: str, default):
 ENABLED = opt("enabled", "BOT_ENABLED", True)
 CHANNELS = opt("channels", "TG_CHANNELS", "@kexxx")  # основний канал-джерело
 RESERVE_CHANNELS = opt("reserve_channels", "RESERVE_CHANNELS", "@stranaua")  # резервний: читаємо, якщо в основному немає нового
+TARGET_POSTS = opt("target_posts", "TARGET_POSTS", 8)  # скільки постів у випуску: основний канал — завжди весь, решту добираємо з резервного
 GEMINI_MODEL = opt("gemini_model", "GEMINI_MODEL", "gemini-3.8-flash")
 GEMINI_FALLBACK_MODEL = opt("gemini_fallback_model", "GEMINI_FALLBACK_MODEL",
                            "gemini-3.5-flash-lite,gemini-3.6-flash")  # запасні моделі через кому
@@ -101,6 +102,7 @@ SQUALL_MS = opt("squall_ms", "SQUALL_MS", float(weather.SQUALL_MS))  # пори�
 DONATE_URL = opt("donate_url", "DONATE_URL", "https://keksfm.kiev.ua")
 TELEGRAM_ENABLED = opt("telegram_enabled", "TELEGRAM_ENABLED", True)  # згадка телеграм-каналу в мові ведучих
 TELEGRAM_NAME = opt("telegram_name", "TELEGRAM_NAME", "Кекс-ньюс")
+TELEGRAM_URL = opt("telegram_url", "TELEGRAM_URL", "https://t.me/kexxxfm")  # лише в описі випуску, вголос не звучить
 WEATHER_LEAD = opt("weather_lead", "WEATHER_LEAD",
                    "І про погоду в Києві.\nА тепер про погоду в Києві.\nІ нарешті про погоду в Києві.")
 WEATHER_LEADS = [x.strip() for x in WEATHER_LEAD.splitlines() if x.strip()]  # явний вступ до погоди (по одному в рядку)
@@ -112,7 +114,7 @@ STATION_SPOKEN = opt("station_spoken", "STATION_SPOKEN", "Служба нови�
 _STRESS = "(a capitalized vowel in the middle of a word marks the stressed vowel)"
 _SERIOUS = ("Our country is at war: for attacks, explosions, casualties and deaths speak gravely, with a "
             "heavy restrained tone. Crisp Ukrainian diction, pronounce every ending in full, correct word stress "
-            + _STRESS + ", and leave a clear pause of about one second after each separate item:")
+            + _STRESS + ", and leave a long, clear pause of about two seconds after each separate item:")
 NAME_1 = opt("host1_name", "HOST1_NAME", "Ангеліна")
 VOICE_1 = opt("host1_voice", "HOST1_VOICE", "Zephyr")  # тимчасово; остаточний вибір — за прослуховуванням voice_samples.py
 SPEED_1 = opt("host1_speed", "HOST1_SPEED", 1.0)
@@ -136,7 +138,7 @@ PROMPT = """Ти — редакторка і ведуча випуску нов�
 (можуть бути російською або українською).
 
 ЗАВДАННЯ 1 — новини. Для кожної окремої новини напиши ОДНЕ коротке речення українською,
-без вигадування фактів. Дублікати об'єднуй, але НЕ пропускай жодної окремої події: речень має бути стільки, скільки різних подій у постах. Пропускай рекламу, заклики підписатися,
+без вигадування фактів. Дублікати об'єднуй, але НЕ пропускай жодної окремої події: речень має бути стільки, скільки різних подій у постах. Позначки [ОСН] і [РЕЗ] на початку постів — це основний і резервний канали (у відповіді позначок не пиши). ПРІОРИТЕТ — [ОСН]: кожну подію з них включи обов'язково й постав на початок випуску, а події з [РЕЗ] додай після них. Пропускай рекламу, заклики підписатися,
 надіслати новину, донатити, службові підписи та пости без новинного змісту.
 
 МОВА (обов'язково): якщо пост російською — переклади його зміст на українську.
@@ -219,6 +221,9 @@ async def _read_channels(client, channels: list[str]):
         async for msg in client.iter_messages(channel, limit=80):
             if not msg.text:  # пост без тексту (самі картинка/відео)
                 continue
+            if msg.text.lstrip().startswith("###"):  # пости, що починаються з «###», у випуск не беремо
+                skipped += 1
+                continue
             clean = clean_post(msg.text)
             if not is_substantial(clean):
                 skipped += 1
@@ -228,10 +233,10 @@ async def _read_channels(client, channels: list[str]):
 
 
 async def fetch_posts(covered: frozenset = frozenset()):
-    """Повертає (тексти, ключі, режим, дата найновішого посту).
-    fresh — нові пости ОСНОВНОГО каналу за останні NEWS_WINDOW_MIN хвилин (без тих, що вже звучали);
-    reserve — в основному нічого нового, беремо так само з РЕЗЕРВНОГО каналу;
-    none — нового немає ніде: випуск пропускається (повторів немає)."""
+    """Повертає (тексти з позначками [ОСН]/[РЕЗ], ключі, режим, дата найновішого посту).
+    ПРІОРИТЕТ — основний канал: беремо ВСІ його нові пости за вікно (навіть 1–2). Якщо їх менше за TARGET_POSTS,
+    добираємо свіжі пости резервного. Режим: fresh — лише основний; mixed — основний + резервний;
+    reserve — основний порожній, лише резервний; none — нового немає ніде (випуск пропускається)."""
     client = TelegramClient(
         StringSession(os.environ["TG_SESSION"]),
         int(os.environ["TG_API_ID"]),
@@ -246,24 +251,23 @@ async def fetch_posts(covered: frozenset = frozenset()):
         return c["date"] >= cutoff and not (DEDUPE and c["key"] in covered)
 
     async with client:
-        cand, skipped = await _read_channels(client, primary)
-        chosen, mode = [c for c in cand if fresh(c)], "fresh"
-        print(f"Основний канал {', '.join(primary)}: нових за {NEWS_WINDOW_MIN} хв — {len(chosen)}")
-        if not chosen and reserve:
-            print(f"В основному немає нового — читаю резервний: {', '.join(reserve)}")
+        pcand, skipped = await _read_channels(client, primary)
+        chosen = sorted([dict(c, src="ОСН") for c in pcand if fresh(c)], key=lambda c: c["date"], reverse=True)
+        n_primary = len(chosen)
+        print(f"Основний канал {', '.join(primary)}: нових за {NEWS_WINDOW_MIN} хв — {n_primary}")
+        extra = []
+        if n_primary < TARGET_POSTS and reserve:
             rcand, rskipped = await _read_channels(client, reserve)
             skipped += rskipped
-            chosen = [c for c in rcand if fresh(c)]
-            mode = "reserve" if chosen else "none"
-            print(f"Резервний канал: нових за {NEWS_WINDOW_MIN} хв — {len(chosen)}")
-        elif not chosen:
-            mode = "none"
-    chosen.sort(key=lambda c: c["date"], reverse=True)
-    chosen = chosen[:MAX_POSTS]
+            pool = sorted([dict(c, src="РЕЗ") for c in rcand if fresh(c)], key=lambda c: c["date"], reverse=True)
+            extra = pool[: TARGET_POSTS - n_primary]
+            print(f"Резервний канал {', '.join(reserve)}: додаю {len(extra)} (нових {len(pool)}), щоб було до {TARGET_POSTS} постів")
+    chosen = (chosen + extra)[:MAX_POSTS]
+    mode = "none" if not chosen else ("fresh" if not extra else ("mixed" if n_primary else "reserve"))
     newest_dt = max((c["date"] for c in chosen), default=None)
-    print(f"Новини: режим={mode}, відібрано {len(chosen)}, відсіяно порожніх/коротких: {skipped}"
+    print(f"Новини: режим={mode}, відібрано {len(chosen)} (основних {n_primary}), відсіяно порожніх/коротких/###: {skipped}"
           + (f", найновіший пост: {newest_dt:%d.%m %H:%M} UTC" if newest_dt else ""))
-    return [c["text"] for c in chosen], [c["key"] for c in chosen], mode, newest_dt
+    return [f"[{c['src']}] {c['text']}" for c in chosen], [c["key"] for c in chosen], mode, newest_dt
 
 
 RU_LETTERS = re.compile(r"[ыэъёЫЭЪЁ]")  # літер немає в українській абетці
@@ -684,12 +688,15 @@ async def make_audio(texts: list[str], kinds: list[str], host: dict, out_path: s
     if before - len(voice) / radio.SR > 1:
         print(f"Скорочено довгі тиші в озвученні: {before:.0f} с -> {len(voice) / radio.SR:.0f} с")
     parts, gaps = radio.split_by_pauses(voice, len(used))
+    method = "за паузами"
+    if parts is None:  # паузи Gemini короткі чи нерівні — розкладаємо за довжиною тексту кожної фрази
+        parts, gaps = radio.split_by_text(voice, used)
+        method = "за довжиною тексту"
     if parts is None:
-        print(f"Озвучення не вдалося розрізати на {len(used)} частин (знайдені паузи, мс: {gaps}); "
-              "перебивок між новинами не буде")
+        print(f"Озвучення не вдалося розрізати на {len(used)} частин; перебивок між новинами не буде")
         parts = [voice]
     else:
-        print(f"Озвучення розрізано на {len(parts)} частин, паузи між ними (мс): {gaps}")
+        print(f"Озвучення розрізано на {len(parts)} частин ({method}), паузи між ними (мс): {gaps}")
     print(f"Озвучення: Gemini TTS (голос {host['gemini']}, ведуча {host['name']})")
     parts = [radio.trim_silence(p) for p in parts]
 
@@ -800,14 +807,20 @@ async def main() -> None:
     if len(voiced_news) < len(items):
         print(f"::warning::Озвучено {len(voiced_news)} новин із {len(items)}: решта не вмістилась у запит і в опис не потрапила.")
     notes = [f"Ведуча: {host['name']}"]
-    if mode == "reserve":
-        notes.append("Джерело новин: резервний канал.")
     notes += [f"• {l}" for l in voiced_news]
     if wtext and "weather" in used_kinds:
         notes.append(f"Погода: {wtext} (дані Open-Meteo.com)")
+    if TELEGRAM_URL:
+        notes.append(f"Наш телеграм-канал новин {TELEGRAM_URL}")
     if DONATE_URL:
         notes.append(f"Підтримати розвиток станції: {DONATE_URL}")
-    fname = feed.publish(site_dir, out, title, "\n".join(notes), int(dur), now, KEEP_EPISODES, cfg,
+    description = "\n".join(notes)
+    reserve_names = ", ".join(_split_channels(RESERVE_CHANNELS))
+    if mode == "mixed":  # службова примітка про джерела — в самому кінці, з нового абзацу
+        description += f"\n\nДжерела новин: основний канал і резервний ({reserve_names})."
+    elif mode == "reserve":
+        description += f"\n\nДжерело новин: резервний канал ({reserve_names})."
+    fname = feed.publish(site_dir, out, title, description, int(dur), now, KEEP_EPISODES, cfg,
                          meta={"host": host["id"], "posts": keys, "mode": mode, "pack": pack})
     print(f"Готово: {len(voiced_news)} новин ({mode}), {dur:.0f} с, файл {fname}")
     mark_published(fname)
