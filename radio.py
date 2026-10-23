@@ -120,6 +120,93 @@ def compress_silences(x: np.ndarray, max_ms: int = 1400, min_run_ms: int = 2000,
     return np.concatenate([body, x[n * FRAME:]]).astype(np.float32)
 
 
+def split_by_text(x: np.ndarray, texts: list[str], min_gap_ms: int = 120, sigma_s: float = 1.6):
+    """Розрізає озвучення на len(texts) частин, спираючись на ДОВЖИНУ тексту кожної фрази (а не лише на
+    довжину пауз): очікувана межа — там, де накопичена довжина тексту, а з усіх тихих проміжків біля неї
+    обирається найдовший. Працює і при коротких та нерівних паузах. Повертає (частини, довжини
+    вибраних пауз, мс) або (None, ...), якщо надійної розкладки немає."""
+    n_parts = len(texts)
+    if n_parts <= 1:
+        return [x], []
+    rr = _frame_rms(x)
+    act = rr[rr > 10 ** (-50 / 20)]
+    if len(act) == 0:
+        return None, []
+    ref = 20 * np.log10(np.sqrt(np.mean(act ** 2)) + 1e-12)
+    quiet = rr < 10 ** ((ref - 26) / 20)
+    loud = np.where(~quiet)[0]
+    s0, e0 = int(loud[0]), int(loud[-1])
+    gaps, i = [], s0
+    while i <= e0:
+        if quiet[i]:
+            j = i
+            while j <= e0 and quiet[j]:
+                j += 1
+            if (j - i) * 10 >= min_gap_ms:
+                gaps.append((i, j))
+            i = j
+        else:
+            i += 1
+    nb = n_parts - 1
+    if len(gaps) < nb:
+        return None, [(b - a_) * 10 for a_, b in gaps]
+    w = np.array([len(t) + 8 for t in texts], float)
+    cum = np.cumsum(w)[:-1] / w.sum()
+    span = (e0 - s0) / 100.0
+    exp = [s0 / 100.0 + c * span for c in cum]
+    cen = np.array([(a_ + b) / 2 / 100.0 for a_, b in gaps])
+    dur = np.array([(b - a_) * 10 for a_, b in gaps], float)
+    m_n, inf = len(gaps), 1e18
+    local = lambda k, m: ((cen[m] - exp[k]) / sigma_s) ** 2 - 2.5 * min(1.0, dur[m] / 700.0)
+    cost = np.full((nb, m_n), inf)
+    back = np.zeros((nb, m_n), int)
+    for m in range(m_n):
+        cost[0, m] = local(0, m)
+    for k in range(1, nb):
+        for m in range(m_n):
+            best, bp = inf, 0
+            for p in range(m):
+                if cen[m] - cen[p] >= 1.0 and cost[k - 1, p] < best:
+                    best, bp = cost[k - 1, p], p
+            if best < inf:
+                cost[k, m] = best + local(k, m)
+                back[k, m] = bp
+    m = int(np.argmin(cost[nb - 1]))
+    if cost[nb - 1, m] >= inf:
+        return None, []
+    chosen = [m]
+    for k in range(nb - 1, 0, -1):
+        m = int(back[k, m])
+        chosen.append(m)
+    chosen.reverse()
+    # Строга перевірка впевненості: краще без перебивок, ніж розрізати посеред фрази.
+    for k, mi in enumerate(chosen):
+        if abs(cen[mi] - exp[k]) > 2.0 * sigma_s or dur[mi] < 400:
+            return None, [int(dur[mi]) for mi in chosen]
+        rivals = [m2 for m2 in range(m_n) if m2 != mi and abs(cen[m2] - exp[k]) <= 2.0]
+        if rivals and max(dur[m2] for m2 in rivals) > 1.25 * dur[mi]:  # поруч є помітно довша пауза — неоднозначно
+            return None, [int(dur[mi]) for mi in chosen]
+    # Перевірка узгодженості: швидкість мови (символів за секунду мовлення) у всіх частин має бути схожою.
+    # Хибна межа дає частині «зайве» або «бракує» тексту — швидкість різко відрізняється.
+    cut_frames = [(gaps[mi][0] + gaps[mi][1]) // 2 for mi in chosen]
+    edges = [0] + cut_frames + [len(quiet)]
+    rates = []
+    for k in range(n_parts):
+        speech_s = float((~quiet[edges[k]:edges[k + 1]]).sum()) / 100.0
+        if speech_s < 0.4:
+            return None, [int(dur[mi]) for mi in chosen]
+        rates.append(len(texts[k]) / speech_s)
+    if max(rates) / min(rates) > 1.5 or not 6.0 <= float(np.median(rates)) <= 26.0:
+        return None, [int(dur[mi]) for mi in chosen]
+    cuts = [c * FRAME for c in cut_frames]
+    segs, prev = [], 0
+    for c in cuts:
+        segs.append(x[prev:c])
+        prev = c
+    segs.append(x[prev:])
+    return segs, [int(dur[mi]) for mi in chosen]
+
+
 def split_by_pauses(x: np.ndarray, parts: int, min_gap_ms: int = 250, edge_ms: int = 600, min_item_gap_ms: int = 500):
     """Ріже озвучення на `parts` шматків по найдовших паузах. Повертає (шматки, довжини пауз)
     або (None, []) якщо достатньо виразних пауз не знайдено."""
