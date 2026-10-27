@@ -100,8 +100,8 @@ WEATHER_LAT = opt("lat", "WEATHER_LAT", 50.45)
 WEATHER_LON = opt("lon", "WEATHER_LON", 30.52)
 SQUALL_MS = opt("squall_ms", "SQUALL_MS", float(weather.SQUALL_MS))  # пориви, від яких згадуємо шквал
 DONATE_URL = opt("donate_url", "DONATE_URL", "https://keksfm.kiev.ua")
-TELEGRAM_ENABLED = opt("telegram_enabled", "TELEGRAM_ENABLED", True)  # згадка телеграм-каналу в мові ведучих
-TELEGRAM_NAME = opt("telegram_name", "TELEGRAM_NAME", "Кекс-ньюс")
+DONATE_ENABLED = opt("donate_enabled", "DONATE_ENABLED", True)  # в кінці випуску ведуча вариативно говорить про донат
+DONATE_SPOKEN = opt("donate_spoken", "DONATE_SPOKEN", "кекс еф ем крапка кієв крапка ю а")  # як вимовляється keksfm.kiev.ua
 TELEGRAM_URL = opt("telegram_url", "TELEGRAM_URL", "https://t.me/kexxxfm")  # лише в описі випуску, вголос не звучить
 WEATHER_LEAD = opt("weather_lead", "WEATHER_LEAD",
                    "І про погоду в Києві.\nА тепер про погоду в Києві.\nІ нарешті про погоду в Києві.")
@@ -118,19 +118,19 @@ _SERIOUS = ("Our country is at war: for attacks, explosions, casualties and deat
 NAME_1 = opt("host1_name", "HOST1_NAME", "Ангеліна")
 VOICE_1 = opt("host1_voice", "HOST1_VOICE", "Zephyr")  # тимчасово; остаточний вибір — за прослуховуванням voice_samples.py
 SPEED_1 = opt("host1_speed", "HOST1_SPEED", 1.0)
-PITCH_1 = opt("host1_pitch", "HOST1_PITCH", 0.0)     # півтони: підвищення робить голос дитячим, тому за замовчуванням 0
+PITCH_1 = opt("host1_pitch", "HOST1_PITCH", 2.0)     # півтони: плюс = вище (дзвінкіший, «дівочий» голос)
 STYLE_1 = opt("host1_style", "HOST1_STYLE",
-              "Read as Angelina, a 19-year-old young woman, radio news host: a feminine, clear, bright voice in a "
-              "higher female register, but mature, confident and NOT childish, not a girl's voice; a SERIOUS, "
+              "Read as Angelina, a 19-year-old young woman, radio news host: a feminine, clear, bright, HIGH-pitched "
+              "voice in a high female register, but mature, confident and NOT childish, not a girl's voice; a SERIOUS, "
               "composed, firm newsroom delivery, no smiling and no softness. " + _SERIOUS)
 NAME_2 = opt("host2_name", "HOST2_NAME", "Лєра")
-VOICE_2 = opt("host2_voice", "HOST2_VOICE", "Aoede")  # Breezy — легший, молодший за Kore; остаточний вибір — за voice_samples.py
+VOICE_2 = opt("host2_voice", "HOST2_VOICE", "Kore")  # Firm — рівний голос; низький тембр дає зниження висоти нижче
 SPEED_2 = opt("host2_speed", "HOST2_SPEED", 1.0)
-PITCH_2 = opt("host2_pitch", "HOST2_PITCH", 0.5)  # трохи вище = молодше (без дитячості)
+PITCH_2 = opt("host2_pitch", "HOST2_PITCH", -2.0)    # півтони: мінус = нижче (глибший, «грудний» голос)
 STYLE_2 = opt("host2_style", "HOST2_STYLE",
-              "Read as Lyera, a young woman of about 22, radio news host: a fresh, young, pleasant and clear voice, "
-              "confident and NOT childish; a SERIOUS, composed, firm newsroom delivery, no smiling and no softness. "
-              + _SERIOUS)
+              "Read as Lyera, a young woman, radio news host: a LOW, deep, smooth female voice with a warm chest "
+              "resonance, confident and NOT childish; a SERIOUS, composed, firm newsroom delivery, no smiling and "
+              "no softness. " + _SERIOUS)
 STATION = opt("station", "STATION", "Служба новин Кекс-радіокомпані")  # у тексті; вимовляється як STATION_SPOKEN
 
 PROMPT = """Ти — редакторка і ведуча випуску новин молодіжного танцювального радіо Кекс ФМ.
@@ -154,16 +154,19 @@ PROMPT = """Ти — редакторка і ведуча випуску нов�
 (не «прилетіло», не «бавовна»): що сталося, де, скільки загиблих і поранених. Без емоційних оцінок.
 
 ЗАВДАННЯ 2 — привітання (intro). Ведуча цього випуску: {host} (жінка), узгоджуй рід дієслів.
-Напиши 1–2 короткі речення. Назви себе ЛИШЕ у формах на кшталт «З вами знову {host}», «Для вас працює {host}»,
-«В ефірі {host}», «{host} знову з вами», «Новини для вас читає {host}» — щоразу інакше, як у різних
-радіоефірах. НІКОЛИ не починай зі слова «Це» і не пиши «Це — {host}»; не вживай «мене звати», «моє ім'я».
-Назви «{station}» ДОСЛІВНО (без відмінювання і без змін у написанні). Привітайся відповідно до часу доби
-(зараз {part}). Манера цього разу: {vibe}. НЕ називай конкретний час, години, хвилини, дату чи день тижня.
-Без жартів, без штампів на кшталт «шановні слухачі».
+Напиши 2 короткі речення в такому ПОРЯДКУ. (1) СПОЧАТКУ скажи, що це «{station}» (ДОСЛІВНО, без відмінювання
+і без змін у написанні) і що це найкоротші новини — щоразу інакше: «найкоротші новини», «найкоротший випуск
+новин», «новини коротко» (слово «найкоротші» або «найкоротший» обов'язкове). (2) ПОТІМ назви себе у формі
+на кшталт «З вами знову {host}», «Для вас працює {host}», «В ефірі {host}», «{host} знову з вами»,
+«Новини для вас читає {host}» — щоразу інакше. Привітання за часом доби (зараз {part}) можна додати одним
+словом на самому початку. НІКОЛИ не починай речення зі слова «Це» і не пиши «Це — {host}»; не вживай
+«мене звати», «моє ім'я». Манера цього разу: {vibe}. НЕ називай конкретний час, години, хвилини, дату чи
+день тижня. Без жартів, без штампів на кшталт «шановні слухачі».
 
-ЗАВДАННЯ 3 — прощання (outro). 1–2 короткі речення: згадай «Кекс ФМ», обов'язково побажай «{wish}»
-(саме цими словами), назви себе у формі «З вами була {host}». Без жартів, без конкретного часу. Заклик
-до донату і телеграм-канал НЕ згадуй: вони звучать окремо перед прощанням.
+ЗАВДАННЯ 3 — прощання (outro). 1–2 короткі речення в такому ПОРЯДКУ. (1) СПОЧАТКУ скажи, що найкоротші
+новини «Кекс ФМ» завершено (щоразу інакше; слова «Кекс ФМ» обов'язкові). (2) ПОТІМ назви себе у формі
+«З вами була {host}». (3) НАПРИКІНЦІ обов'язково побажай «{wish}» (саме цими словами). Без жартів і без
+конкретного часу. Заклик до донату НЕ додавай: він звучить окремо перед прощанням.
 {closing_task}{extra}
 Відповідь — лише JSON-об'єкт з ключами {keys}.
 
@@ -366,16 +369,15 @@ VIBES = [
     "серйозно й упевнено",
 ]
 INTRO_FALLBACKS = [
-    "З вами знову {host}, {station}. Слухайте випуск новин.",
-    "Для вас працює {host}, {station}. Найважливіші новини — далі.",
-    "В ефірі {host}, {station}. Починаємо випуск.",
-    "{host} знову з вами. {station}, випуск новин.",
-    "Новини для вас читає {host}, {station}.",
+    "{station} — найкоротші новини. З вами знову {host}.",
+    "{station}: найкоротший випуск новин. Для вас працює {host}.",
+    "В ефірі {station}, найкоротші новини. {host} знову з вами.",
+    "{station}, новини коротко: найкоротший випуск. Новини для вас читає {host}.",
 ]
 OUTRO_FALLBACKS = [
-    "На цьому все. Це був Кекс ФМ, з вами була {host}. {Wish}!",
-    "Новини від Кекс ФМ завершено, з вами була {host}. {Wish}!",
-    "Кекс ФМ лишається з вами. З вами була {host}. {Wish}!",
+    "Найкоротші новини Кекс ФМ завершено. З вами була {host}. {Wish}!",
+    "Кекс ФМ: найкоротші новини позаду. З вами була {host}. {Wish}!",
+    "Найкоротший випуск новин Кекс ФМ завершено. З вами була {host}. {Wish}!",
 ]
 
 
@@ -417,12 +419,6 @@ def make_context(now: datetime, host: dict, wsum: dict | None = None) -> dict:
            "time": f"{now:%H:%M}", "part": part, "wish": wish, "vibe": random.choice(VIBES),
            "keys": '"intro" (рядок), "items" (масив рядків-новин), "outro" (рядок)',
            "closing_task": "", "extra": ""}
-    if TELEGRAM_ENABLED:
-        ctx["keys"] += ', "telegram" (рядок)'
-        ctx["closing_task"] += (
-            "\nЗАВДАННЯ 4 — телеграм-канал (telegram). 1–2 короткі речення наприкінці випуску: нагадай про наш "
-            f"телеграм-канал «{TELEGRAM_NAME}» (більше новин — там). НЕ згадуй сайт, посилання чи адресу. "
-            "Без жартів, без конкретного часу.\n")
     if EXTRA_INSTRUCTIONS.strip():
         ctx["extra"] = ("\nДодаткові вказівки редактора (виконуй, якщо не суперечать правилам вище): "
                         + EXTRA_INSTRUCTIONS.strip() + "\n")
@@ -450,8 +446,7 @@ def _ask(client, posts: list[str], ctx: dict, strict: bool, note: str = "") -> d
         obj = {"items": obj}
     items = [x.strip() for x in obj.get("items", []) if isinstance(x, str) and x.strip()]
     return {"intro": str(obj.get("intro") or "").strip(), "items": items,
-            "outro": str(obj.get("outro") or "").strip(),
-            "telegram": str(obj.get("telegram") or "").strip()}
+            "outro": str(obj.get("outro") or "").strip()}
 
 
 DIGITS_NOTE = ("\n\nУВАГА: у новинах були цифри. Запиши ВСІ числа словами, у правильному відмінку й роді, "
@@ -473,30 +468,39 @@ def _this_is(text: str, host: str) -> bool:
 
 
 def valid_intro(text: str, ctx: dict) -> bool:
+    """Спочатку «Служба новин… найкоротші новини», і лише потім ім'я ведучої."""
     low = text.lower()
-    return (bool(text) and _first_name(ctx["host"]) in low and STATION.lower() in low
+    name, st = _first_name(ctx["host"]), STATION.lower()
+    return (bool(text) and name in low and st in low and low.index(st) < low.index(name)
+            and "найкоротш" in low
             and not has_russian(text) and not NO_TIME_RE.search(text) and not NO_NAME_RE.search(text)
             and not _this_is(text, ctx["host"]))
 
 
 def valid_outro(text: str, ctx: dict) -> bool:
+    """Порядок: «Кекс ФМ… найкоротші новини завершено» -> ім'я ведучої -> побажання."""
     low = text.lower()
-    return (bool(text) and "кекс фм" in low and ctx["wish"] in low
+    name, wish = _first_name(ctx["host"]), ctx["wish"]
+    return (bool(text) and "кекс фм" in low and name in low and wish in low
+            and low.index("кекс фм") < low.index(name) < low.index(wish)
             and not has_russian(text) and not NO_TIME_RE.search(text) and not NO_NAME_RE.search(text))
 
 
-TELEGRAM_FALLBACKS = [
-    "Більше новин читайте в нашому телеграм-каналі «{name}».",
-    "Усі подробиці — в нашому телеграм-каналі «{name}».",
-    "Не пропустіть більше новин у нашому телеграм-каналі «{name}».",
+# Донат у кінці випуску: вариативно, з адресою сайту (вимовляється як DONATE_SPOKEN)
+DONATE_VARIANTS = [
+    "А якщо у вас є бажання підтримати розвиток нашої станції, донат можна зробити за посиланням на нашому сайті {addr}.",
+    "Якщо ви хочете підтримати розвиток нашої станції, донат можна зробити за посиланням на нашому сайті {addr}.",
+    "А підтримати розвиток нашої станції донатом можна за посиланням на нашому сайті {addr}.",
+    "Якщо вам подобається наша робота й є бажання підтримати розвиток станції, донат можна зробити за посиланням на нашому сайті {addr}.",
+    "Бажаєте допомогти розвитку нашої станції? Донат можна зробити за посиланням на нашому сайті {addr}.",
 ]
 
 
-def valid_telegram(text: str) -> bool:
-    low = text.lower()
-    return (bool(text) and len(text) <= 240 and "телеграм" in low and TELEGRAM_NAME.lower() in low
-            and "сайт" not in low and not NO_ADDR_RE.search(text) and not has_russian(text)
-            and not NO_TIME_RE.search(text))
+def pick_donate(last_variant) -> tuple[str, int]:
+    """Випадкова формула, але не та сама, що в попередньому випуску; повертає (текст, номер)."""
+    choices = [i for i in range(len(DONATE_VARIANTS)) if i != last_variant]
+    v = random.choice(choices)
+    return DONATE_VARIANTS[v].format(addr=DONATE_SPOKEN), v
 
 
 def spoken(text: str) -> str:
@@ -505,10 +509,10 @@ def spoken(text: str) -> str:
 
 
 def summarize(posts: list[str], ctx: dict, wsum: dict | None = None):
-    """Повертає (привітання, новини, прощання, текст погоди з явним вступом або None, телеграм або None)."""
+    """Повертає (привітання, новини, прощання, текст погоди з явним вступом або None)."""
     client = _client()
     data = _ask(client, posts, ctx, strict=False)
-    own = [data["intro"], data["outro"], data["telegram"]]
+    own = [data["intro"], data["outro"]]
     strict = any(looks_russian(x) for x in data["items"]) or any(has_russian(x) for x in own if x)
     note = DIGITS_NOTE if any(re.search(r"\d", x) for x in data["items"]) else ""
     if strict or note:
@@ -529,13 +533,7 @@ def summarize(posts: list[str], ctx: dict, wsum: dict | None = None):
         wtext = weather.compose_text(wsum)
         if WEATHER_LEADS:  # погоду оголошуємо явно: «І про погоду в Києві.»
             wtext = f"{random.choice(WEATHER_LEADS)} {wtext}"
-    tg = None
-    if TELEGRAM_ENABLED:
-        tg = data["telegram"]
-        if not valid_telegram(tg):
-            print("Згадка телеграм-каналу не пройшла перевірку, беру запасну")
-            tg = random.choice(TELEGRAM_FALLBACKS).format(name=TELEGRAM_NAME)
-    return intro, items, outro, wtext, tg
+    return intro, items, outro, wtext
 
 
 def fit_bytes(texts: list[str], kinds: list[str], limit: int):
@@ -749,7 +747,7 @@ async def main() -> None:
         print("Нових матеріалів немає ні в основному, ні в резервному каналі: випуск пропущено (повторів не робимо).")
         return
     ctx = make_context(air, host, wsum)
-    intro, items, outro, wtext, tg = summarize(posts, ctx, wsum)
+    intro, items, outro, wtext = summarize(posts, ctx, wsum)
     if not items:
         print("Gemini не повернув новин, пропускаю.")
         return
@@ -757,13 +755,14 @@ async def main() -> None:
     texts += items; kinds += ["news"] * len(items)
     if wtext:
         texts.append(wtext); kinds.append("weather")
-    if tg:  # наприкінці випуску, у мові ведучих: телеграм-канал, потім прощання
-        texts.append(tg); kinds.append("tg")
+    dn, dn_variant = pick_donate(last.get("donate")) if DONATE_ENABLED else (None, None)
+    if dn:  # наприкінці випуску: вариативний заклик підтримати станцію (з адресою сайту), потім прощання
+        texts.append(dn); kinds.append("donate")
     texts.append(outro); kinds.append("outro")
     print(f"Ведуча: {host['name']} (попередній випуск вела: №{last.get('host', '—')}); пакет звуків: {pack}")
     print(f"Привітання: {intro}")
     print(f"Погода: {wtext}")
-    print(f"Телеграм: {tg}")
+    print(f"Донат (формула №{dn_variant}): {dn}")
     print(f"Прощання: {outro}")
     title = f"Новини {air:%d.%m %H:00}"
     cfg = {
@@ -793,9 +792,11 @@ async def main() -> None:
         if not src:
             print("::error::Озвучки немає, а попереднього випуску для повтору теж немає.")
             raise SystemExit(1)
-        fname = feed.publish(site_dir, os.path.join(site_dir, src["file"]), f"{title} (повтор)",
-                             "Повтор попереднього випуску: нову якісну озвучку зараз отримати не вдалося.\n"
-                             + src.get("description", ""),
+        base = src.get("description", "").rstrip()  # позначка про повтор — лише в самому кінці опису
+        tail = "Повтор попереднього випуску."
+        if tail not in base:
+            base += ("\n" if "Ведуча:" in base.split("\n\n")[-1] else "\n\n") + tail
+        fname = feed.publish(site_dir, os.path.join(site_dir, src["file"]), f"{title} (повтор)", base,
                              int(src.get("duration", 0)), now, KEEP_EPISODES, cfg,
                              meta={**(src.get("meta") or {}), "reused": True, "mode": "reuse"}, name_suffix="_r")
         print(f"Опубліковано повтор попереднього випуску ({src['file']}).")
@@ -806,22 +807,20 @@ async def main() -> None:
     voiced_news = [t for t, k in zip(used, used_kinds) if k == "news"]
     if len(voiced_news) < len(items):
         print(f"::warning::Озвучено {len(voiced_news)} новин із {len(items)}: решта не вмістилась у запит і в опис не потрапила.")
-    notes = [f"Ведуча: {host['name']}"]
-    notes += [f"• {l}" for l in voiced_news]
-    if wtext and "weather" in used_kinds:
-        notes.append(f"Погода: {wtext} (дані Open-Meteo.com)")
+    # Опис: новини, посилання; службові рядки (ведуча, джерела) — в самому кінці, з нового абзацу. Без погоди.
+    notes = [f"• {l}" for l in voiced_news]
     if TELEGRAM_URL:
         notes.append(f"Наш телеграм-канал новин {TELEGRAM_URL}")
     if DONATE_URL:
         notes.append(f"Підтримати розвиток станції: {DONATE_URL}")
-    description = "\n".join(notes)
-    reserve_names = ", ".join(_split_channels(RESERVE_CHANNELS))
-    if mode == "mixed":  # службова примітка про джерела — в самому кінці, з нового абзацу
-        description += f"\n\nДжерела новин: основний канал і резервний ({reserve_names})."
+    service = [f"Ведуча: {host['name']}"]
+    if mode == "mixed":
+        service.append("Джерела новин: основний та резервний канали.")
     elif mode == "reserve":
-        description += f"\n\nДжерело новин: резервний канал ({reserve_names})."
+        service.append("Джерело новин: резервний канал.")
+    description = "\n".join(notes) + "\n\n" + "\n".join(service)
     fname = feed.publish(site_dir, out, title, description, int(dur), now, KEEP_EPISODES, cfg,
-                         meta={"host": host["id"], "posts": keys, "mode": mode, "pack": pack})
+                         meta={"host": host["id"], "posts": keys, "mode": mode, "pack": pack, "donate": dn_variant})
     print(f"Готово: {len(voiced_news)} новин ({mode}), {dur:.0f} с, файл {fname}")
     mark_published(fname)
 
