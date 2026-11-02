@@ -673,33 +673,163 @@ def _tile(loop: np.ndarray, n: int, seamless: bool) -> np.ndarray:
     return out[:n]
 
 
+# ---------------------------------------------------------------- ефірна обробка голосу (B4)
+def fm_voice(x: np.ndarray, amount: float = 0.7) -> np.ndarray:
+    """Обробка «як на FM»: фільтр від гулу, де-эссер (приглушує шиплячі), присутність і тепло, компресор
+    (вирівнює гучність слів), м'який лімітер. amount 0..1 — частка обробленого звуку у змішуванні. Довжину не змінює."""
+    amount = float(np.clip(amount, 0.0, 1.0))
+    if amount <= 0 or len(x) < SR:
+        return x
+    fr = FRAME
+    y = _hp(x.astype(np.float64), 70)
+    nf = len(y) // fr
+    centers = (np.arange(nf) + 0.5) * fr
+    pos = np.arange(len(y))
+    # де-эссер: де високі (5–9.5 кГц) складають надто велику частку енергії кадру — глушимо лише цю смугу
+    band = _bp(y, 5000, 9500)
+    rb = np.sqrt((band[: nf * fr].reshape(nf, fr) ** 2).mean(axis=1))
+    ra = np.sqrt((y[: nf * fr].reshape(nf, fr) ** 2).mean(axis=1)) + 1e-9
+    ratio = rb / ra
+    g = np.ones(nf)
+    hit = (rb > 10 ** (-34 / 20)) & (ratio > 0.42)
+    g[hit] = np.clip((0.42 / ratio[hit]) ** 1.2, 0.35, 1.0)
+    g = np.convolve(g, np.ones(3) / 3, mode="same")
+    y = y - band * (1 - np.interp(pos, centers, g))
+    # присутність (2.5–5 кГц) і тепло (до 250 Гц)
+    y = y + _bp(y, 2500, 5000) * 0.30 + _lp(y, 250) * 0.12
+    # компресор 3:1 від -24 дБ, швидка атака, повільний спад; тиху «підлогу» не підсилюємо
+    lvl = 20 * np.log10(np.sqrt((y[: nf * fr].reshape(nf, fr) ** 2).mean(axis=1)) + 1e-9)
+    red = np.where(lvl > -24.0, (lvl + 24.0) * (1 - 1 / 3.0), 0.0)
+    red[lvl < -50] = 0.0
+    sm, cur = np.zeros(nf), 0.0
+    for i in range(nf):
+        cur += (0.6 if red[i] > cur else 0.08) * (red[i] - cur)
+        sm[i] = cur
+    y = y * np.interp(pos, centers, 10 ** (-sm / 20))
+    y = np.tanh(y * 1.05) / 1.05
+    return ((1 - amount) * x + amount * y).astype(np.float32)
+
+
+# ---------------------------------------------------------------- звуки погоди під блоком погоди (B3)
+def weather_fx(kind: str, dur: float = 30.0, seed: int = 7) -> np.ndarray:
+    """Фонова текстура до погоди: rain, thunder, snow, frost, wind, sun, cloud. Стерео, вирівняна до -19 дБ
+    (далі на мікшуванні знижується на WEATHER_FX_DB)."""
+    rng = np.random.default_rng(seed)
+    n = int(dur * SR)
+    t = np.arange(n) / SR
+
+    def pan_add(buf, snd, at, pan):
+        d = min(len(snd), len(buf) - at)
+        buf[at:at + d, 0] += snd[:d] * (1 - max(0.0, pan))
+        buf[at:at + d, 1] += snd[:d] * (1 + min(0.0, pan))
+
+    out = np.zeros((n, 2))
+    if kind in ("rain", "thunder"):
+        hi = _lp(_hp(rng.standard_normal((n, 2)), 2200), 9000)
+        slow = _lp(rng.standard_normal(n), 3.0)
+        slow = (slow - slow.min()) / (np.ptp(slow) + 1e-9)
+        out += hi * (0.45 + 0.55 * slow)[:, None] * (0.32 if kind == "thunder" else 0.5)
+        for _ in range(int(32 * dur)):  # окремі краплі
+            d = int(0.04 * SR)
+            tt = np.arange(d) / SR
+            ping = np.sin(2 * np.pi * rng.uniform(1500, 4200) * tt) * np.exp(-tt * 70) * rng.uniform(0.1, 0.4)
+            pan_add(out, ping, int(rng.uniform(0, dur - 0.1) * SR), rng.uniform(-1, 1))
+        if kind == "thunder":
+            rum = _lp(rng.standard_normal(n), 120, order=4)
+            env = np.zeros(n)
+            for c in rng.uniform(1.0, max(1.5, dur - 2.5), size=max(2, int(dur / 9))):
+                i = int(c * SR)
+                k = np.arange(min(int(2.2 * SR), n - i)) / SR
+                env[i:i + len(k)] += np.exp(-k * 1.4) * (1 - np.exp(-k * 14))
+            out += (rum * env * 9.0)[:, None]
+    elif kind in ("snow", "frost"):
+        out += _hp(rng.standard_normal((n, 2)), 6000) * 0.012
+        scale = [84, 88, 91, 95, 96] if kind == "frost" else [76, 79, 83, 84, 88]
+        for _ in range(int((4 if kind == "frost" else 3) * dur)):  # рідкісні дзвіночки
+            pan_add(out, bell(mtof(float(rng.choice(scale))), 1.2, 0.18), int(rng.uniform(0, dur - 1.5) * SR), rng.uniform(-1, 1))
+    elif kind == "wind":
+        body = _bp(rng.standard_normal((n, 2)), 250, 1300) * (0.55 + 0.45 * np.sin(2 * np.pi * 0.16 * t + 1.1) ** 2)[:, None] * 0.8
+        whistle = _bp(rng.standard_normal((n, 2)), 1500, 1900) * (0.2 + 0.8 * np.sin(2 * np.pi * 0.11 * t) ** 4)[:, None] * 0.35
+        out += body + whistle
+        pan = 0.5 * np.sin(2 * np.pi * 0.07 * t)
+        out[:, 0] *= 1 - np.maximum(0, pan)
+        out[:, 1] *= 1 + np.minimum(0, pan)
+    else:  # sun / cloud — м'який пад
+        notes = (60, 64, 67, 71) if kind == "sun" else (57, 60, 64)
+        p = pad([mtof(v) for v in notes], dur + 0.5, 0.25 if kind == "sun" else 0.12)
+        out += p[:n]
+    return normalize(out.astype(np.float32), -19, 0.9)
+
+
+def _fit_fx(fx: np.ndarray, n: int) -> np.ndarray:
+    if len(fx) < n:
+        fx = np.tile(fx, (n // len(fx) + 1, 1))
+    seg = fx[:n].copy()
+    fi, fo = min(int(0.4 * SR), n // 3), min(int(0.7 * SR), n // 3)
+    seg[:fi] *= np.linspace(0, 1, fi)[:, None]
+    seg[-fo:] *= np.linspace(1, 0, fo)[:, None]
+    return seg
+
+
+# ---------------------------------------------------------------- тизер перед джинглом (B1)
+def teaser_bed(dur_s: float, seed: int = 11) -> np.ndarray:
+    """Підкладка під тизер: нарощування, пад і фінальний «удар» у момент, коли тизер закінчується."""
+    rng = np.random.default_rng(seed)
+    n = int(dur_s * SR)
+    buf = np.zeros((n + int(2.4 * SR), 2), np.float32)
+    ris = riser(dur_s, rng, 0.55)
+    buf[: len(ris)] += ris
+    _add(buf, pad([mtof(45), mtof(52), mtof(57), mtof(60)], dur_s + 1.2, 0.22), 0.0)
+    _add(buf, crash(2.0, rng, 0.6), dur_s)
+    _add(buf, boom(1.4, rng, 0.9), dur_s)
+    _add(buf, kick(), dur_s, 0.9)
+    return normalize(buf, -21, 0.9)
+
+
 def assemble(parts, kinds=None, opener=None, closer=None, stingers=None, bed=None,
              bed_seamless=True, bed_under_db=-20.0, bed_gap_db=-12.0,
              jingle_gain_db=0.0, sting_gain_db=0.0, gap_ms: int = 700, weather_sting=None,
-             pre_ms: int = 450, post_ms: int = 250) -> np.ndarray:
-    """Зводить випуск у СТЕРЕО (n, 2). Голос — моно, по центру; музика, джингли й фон — стерео."""
+             pre_ms: int = 450, post_ms: int = 250, gap_heavy_ms: int = 1500,
+             weather_fx=None, weather_fx_db: float = -22.0) -> np.ndarray:
+    """Зводить випуск у СТЕРЕО (n, 2). Голос — моно, по центру; музика, джингли й фон — стерео.
+    kinds: teaser, intro, news, news_heavy (важка новина: без перебивки, довша пауза), safety, weather, donate, outro."""
     ms = lambda v: int(v * SR / 1000)
-    kinds = kinds or ["news"] * len(parts)
-    opener, closer, weather_sting, bed = map(_as_stereo, (opener, closer, weather_sting, bed))
+    parts = list(parts)
+    kinds = list(kinds or ["news"] * len(parts))
+    opener, closer, weather_sting, bed, weather_fx = map(_as_stereo, (opener, closer, weather_sting, bed, weather_fx))
     stingers = [_as_stereo(x) for x in (stingers or [])]
     track = np.zeros((0, 2), np.float32)
     vt = np.zeros(0, np.float32)  # окремо лише голос — для притискання фону
-    cursor = 0
+    t_off = 0
+    if kinds and kinds[0] == "teaser" and len(parts) > 1:  # тизер: заголовок поверх нарощування, потім удар і джингл
+        tv = parts.pop(0)
+        kinds.pop(0)
+        lead, tail = ms(350), ms(250)
+        track = _mix(track, teaser_bed((lead + len(tv) + tail) / SR), 0)
+        track = _mix(track, np.stack([tv, tv], axis=1), lead)
+        vt = _mix(vt, tv, lead)
+        t_off = lead + len(tv) + tail + ms(900)
+    cursor = t_off
     if opener is not None:
         ov = min(ms(1800), len(opener) // 2)
         o = opener * _db(jingle_gain_db)
         o[-ov:] *= np.linspace(1.0, 0.18, ov)[:, None]  # музика «сідає» під привітання
-        track = _mix(track, o, 0)
-        cursor = len(o) - ov
+        track = _mix(track, o, t_off)
+        cursor = t_off + len(o) - ov
     voice_start = cursor
     last = None
     for i, p in enumerate(parts):
         track = _mix(track, np.stack([p, p], axis=1), cursor)  # голос по центру
         vt = _mix(vt, p, cursor)
+        if i < len(kinds) and kinds[i] == "weather" and weather_fx is not None:  # звуки погоди під блоком погоди
+            track = _mix(track, _fit_fx(weather_fx, len(p) + ms(900)) * _db(weather_fx_db), max(0, cursor - ms(200)))
         end = cursor + len(p)
         if i < len(parts) - 1:
-            use_w = kinds[i + 1] == "weather" and weather_sting is not None
-            if (stingers or use_w) and kinds[i + 1] in ("news", "weather"):
+            ka = kinds[i] if i < len(kinds) else "news"
+            kb = kinds[i + 1] if i + 1 < len(kinds) else "news"
+            heavy = "news_heavy" in (ka, kb)
+            use_w = kb == "weather" and weather_sting is not None
+            if kb in ("news", "weather") and (stingers or use_w) and not heavy:
                 if use_w:
                     st = weather_sting * _db(sting_gain_db)  # особлива перебивка лише перед погодою
                 else:
@@ -709,6 +839,8 @@ def assemble(parts, kinds=None, opener=None, closer=None, stingers=None, bed=Non
                 s0 = end + ms(pre_ms)  # тиша після голосу, потім перебивка, потім тиша перед наступною новиною
                 track = _mix(track, st, s0)
                 cursor = s0 + len(st) + ms(post_ms)
+            elif heavy:
+                cursor = end + ms(gap_heavy_ms)  # біля важкої новини — без «танцювальних» вставок, лише пауза
             else:
                 cursor = end + ms(gap_ms)
         else:
