@@ -771,28 +771,13 @@ def _fit_fx(fx: np.ndarray, n: int) -> np.ndarray:
     return seg
 
 
-# ---------------------------------------------------------------- тизер перед джинглом (B1)
-def teaser_bed(dur_s: float, seed: int = 11) -> np.ndarray:
-    """Підкладка під тизер: нарощування, пад і фінальний «удар» у момент, коли тизер закінчується."""
-    rng = np.random.default_rng(seed)
-    n = int(dur_s * SR)
-    buf = np.zeros((n + int(2.4 * SR), 2), np.float32)
-    ris = riser(dur_s, rng, 0.55)
-    buf[: len(ris)] += ris
-    _add(buf, pad([mtof(45), mtof(52), mtof(57), mtof(60)], dur_s + 1.2, 0.22), 0.0)
-    _add(buf, crash(2.0, rng, 0.6), dur_s)
-    _add(buf, boom(1.4, rng, 0.9), dur_s)
-    _add(buf, kick(), dur_s, 0.9)
-    return normalize(buf, -21, 0.9)
-
-
 def assemble(parts, kinds=None, opener=None, closer=None, stingers=None, bed=None,
              bed_seamless=True, bed_under_db=-20.0, bed_gap_db=-12.0,
              jingle_gain_db=0.0, sting_gain_db=0.0, gap_ms: int = 700, weather_sting=None,
              pre_ms: int = 450, post_ms: int = 250, gap_heavy_ms: int = 1500,
              weather_fx=None, weather_fx_db: float = -22.0) -> np.ndarray:
     """Зводить випуск у СТЕРЕО (n, 2). Голос — моно, по центру; музика, джингли й фон — стерео.
-    kinds: teaser, intro, news, news_heavy (важка новина: без перебивки, довша пауза), safety, weather, donate, outro."""
+    kinds: teaser (після позивного), intro, news, news_heavy (важка новина: без перебивки, довша пауза), safety, weather, donate, outro."""
     ms = lambda v: int(v * SR / 1000)
     parts = list(parts)
     kinds = list(kinds or ["news"] * len(parts))
@@ -800,29 +785,22 @@ def assemble(parts, kinds=None, opener=None, closer=None, stingers=None, bed=Non
     stingers = [_as_stereo(x) for x in (stingers or [])]
     track = np.zeros((0, 2), np.float32)
     vt = np.zeros(0, np.float32)  # окремо лише голос — для притискання фону
-    t_off = 0
-    if kinds and kinds[0] == "teaser" and len(parts) > 1:  # тизер: заголовок поверх нарощування, потім удар і джингл
-        tv = parts.pop(0)
-        kinds.pop(0)
-        lead, tail = ms(350), ms(250)
-        track = _mix(track, teaser_bed((lead + len(tv) + tail) / SR), 0)
-        track = _mix(track, np.stack([tv, tv], axis=1), lead)
-        vt = _mix(vt, tv, lead)
-        t_off = lead + len(tv) + tail + ms(900)
-    cursor = t_off
-    if opener is not None:
+    cursor = 0
+    if opener is not None:  # ВИПУСК ПОЧИНАЄТЬСЯ З ПОЗИВНОГО — джингла звукового пакета за часом доби; лише потім слова
         ov = min(ms(1800), len(opener) // 2)
         o = opener * _db(jingle_gain_db)
-        o[-ov:] *= np.linspace(1.0, 0.18, ov)[:, None]  # музика «сідає» під привітання
-        track = _mix(track, o, t_off)
-        cursor = t_off + len(o) - ov
+        o[-ov:] *= np.linspace(1.0, 0.18, ov)[:, None]  # музика «сідає» під перші слова (тизер або привітання)
+        track = _mix(track, o, 0)
+        cursor = len(o) - ov
     voice_start = cursor
     last = None
+    weather_spans = []  # де звучить блок погоди: основну підкладку там вимикаємо
     for i, p in enumerate(parts):
         track = _mix(track, np.stack([p, p], axis=1), cursor)  # голос по центру
         vt = _mix(vt, p, cursor)
         if i < len(kinds) and kinds[i] == "weather" and weather_fx is not None:  # звуки погоди під блоком погоди
             track = _mix(track, _fit_fx(weather_fx, len(p) + ms(900)) * _db(weather_fx_db), max(0, cursor - ms(200)))
+            weather_spans.append((cursor, cursor + len(p)))
         end = cursor + len(p)
         if i < len(parts) - 1:
             ka = kinds[i] if i < len(kinds) else "news"
@@ -866,6 +844,16 @@ def assemble(parts, kinds=None, opener=None, closer=None, stingers=None, bed=Non
         mask[voice_start:voice_start + fi] *= np.linspace(0, 1, fi)
         if fo > 0:
             mask[bed_end - fo:bed_end] *= np.linspace(1, 0, fo)
+        for ws, we in weather_spans:  # під час погоди основна підкладка ПОВНІСТЮ вимкнена, лишається лише погодна
+            hole = np.ones(n, np.float32)
+            a0, a1 = max(0, ws - ms(900)), max(0, ws - ms(300))
+            b0, b1 = min(n, we + ms(700)), min(n, we + ms(1600))
+            hole[a1:b0] = 0.0
+            if a1 > a0:
+                hole[a0:a1] = np.linspace(1, 0, a1 - a0)  # плавно «йде» перед блоком погоди
+            if b1 > b0:
+                hole[b0:b1] = np.linspace(0, 1, b1 - b0)  # і плавно повертається після нього
+            mask *= hole
         track += b * (g * mask)[:, None]
     f = min(len(track), ms(600))
     track[-f:] *= np.linspace(1, 0, f)[:, None]
