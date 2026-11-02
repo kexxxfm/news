@@ -880,7 +880,7 @@ async def main() -> None:
         print("Gemini не повернув новин, пропускаю.")
         return
     texts, kinds = [], []
-    if teaser:  # тизер звучить ПЕРЕД джинглом: заголовок поверх нарощування
+    if teaser:  # після позивного (джингл пакета за часом доби): «Головне зараз: …», далі привітання
         texts.append(teaser); kinds.append("teaser")
     texts.append(intro); kinds.append("intro")
     for t, h in zip(items, heavy):  # важкі новини (загиблі, обстріли) — без «танцювальних» перебивок
