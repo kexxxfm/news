@@ -5,6 +5,11 @@ on:
   schedule:
     - cron: "5 * * * *"   # запуск щогодини (UTC); справжня робота лише перед годиною ефіру, див. check
   workflow_dispatch:       # кнопка ручного запуску (публікує одразу, без очікування)
+    inputs:
+      post_to_telegram:
+        description: "Опублікувати випуск у Telegram-каналі (для ручних запусків за замовчуванням ні)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -92,6 +97,17 @@ jobs:
           if [ "$M" -lt "$PUBLISH_MINUTE" ]; then
             sleep $(( (PUBLISH_MINUTE - M) * 60 - S ))
           fi
+
+      # Публікація випуску в Telegram-каналі (одночасно з RSS). Ручні запуски публікують лише за галочкою.
+      - name: Опублікувати випуск у Telegram-каналі
+        if: steps.bot.outputs.published == 'true' && steps.bot.outputs.tg_post == 'true' && (github.event_name != 'workflow_dispatch' || inputs.post_to_telegram)
+        continue-on-error: true
+        run: python post_telegram.py
+        env:
+          TG_API_ID: ${{ secrets.TG_API_ID }}
+          TG_API_HASH: ${{ secrets.TG_API_HASH }}
+          TG_SESSION: ${{ secrets.TG_SESSION }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
 
       # force_orphan: історія гілки не росте, лишається один останній коміт
       - uses: peaceiris/actions-gh-pages@v4
