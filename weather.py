@@ -220,3 +220,21 @@ def compose_text(w: dict, rng=None) -> str:
 
 def fallback_text(where: str, w: dict) -> str:
     return compose_text(w)
+
+
+def fx_kind(w: dict) -> str:
+    """Який звук підкласти під блок погоди: thunder, snow, rain, wind, frost, sun або cloud."""
+    d = " ".join(p["desc"] for p in w["points"]).lower() + " " + " ".join(w.get("hazards", [])).lower()
+    if "гроз" in d:
+        return "thunder"
+    if "сніг" in d:
+        return "snow"
+    if w["pmax"] >= 50 or any(x in d for x in ("дощ", "злив", "мряк")):
+        return "rain"
+    if w["squall"]:
+        return "wind"
+    if w["tmax"] <= 0:
+        return "frost"
+    if "ясно" in d:
+        return "sun"
+    return "cloud"
