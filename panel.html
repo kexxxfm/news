@@ -19,9 +19,10 @@ label{display:block;margin:10px 0 3px;color:var(--mut);font-size:13px}.chk{displ
 .mut,small{color:var(--mut)}.ok{color:var(--ok)}.bad{color:var(--bad)}a{color:#6db3ff}audio{width:100%;margin-top:6px}
 .hide{display:none}#toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:#222a3a;border:1px solid var(--line);padding:10px 16px;border-radius:10px;opacity:0;transition:.25s;max-width:92%;pointer-events:none}
 #toast.show{opacity:1}#toast.bad{border-color:var(--bad)}.val{float:right;color:var(--tx)}
+details summary{cursor:pointer;margin-top:8px}pre{margin:6px 0 0;font-size:12px}optgroup{color:var(--mut)}
 </style></head><body>
 <header><h1>🎛 Пульт · Кекс ФМ</h1>
-<nav id="nav" class="hide"><button data-t="ov" class="on">Обзор</button><button data-t="st">Настройки</button><button data-t="sd">Звуки</button><button data-t="hp">Помощь</button></nav>
+<nav id="nav" class="hide"><button data-t="ov" class="on">Обзор</button><button data-t="ch">Персонажи</button><button data-t="jg">Джинглы</button><button data-t="st">Настройки</button><button data-t="sd">Звуки</button><button data-t="hp">Помощь</button></nav>
 <span style="flex:1"></span><button id="out" class="hide">Выйти</button></header>
 <main>
 <section id="connect" class="card hide">
@@ -33,9 +34,31 @@ label{display:block;margin:10px 0 3px;color:var(--mut);font-size:13px}.chk{displ
 
 <section id="ov" class="tab"><div class="card"><h3>Управление</h3>
 <button class="main" onclick="run()">▶ Собрать выпуск сейчас</button> <span id="links" class="mut"></span>
+<label class="chk"><input type="checkbox" id="tgpost"> и опубликовать этот выпуск в Telegram-канале (по расписанию бот публикует сам)</label>
 <p class="mut">Выпуск собирается заранее и публикуется в :30 перед эфиром (каждые 2 часа). Время меняется в hourly.yml. Пауза выпусков — в «Настройки → Публикация».</p></div>
 <h2>Последние запуски</h2><div id="runs" class="card"></div>
 <h2>Выпуски</h2><div id="eps"></div></section>
+
+<section id="ch" class="tab hide">
+<div class="card"><h3>Ключ Gemini API для прослушивания</h3>
+<p class="mut">Образцы озвучиваются прямо из этой страницы: запрос уходит из вашего браузера в Google. Ключ хранится только в этом браузере и отправляется только на generativelanguage.googleapis.com. Каждое прослушивание — один запрос к бесплатному лимиту озвучки (он небольшой).</p>
+<label>Ключ Gemini API</label><input id="gkey" type="password" autocomplete="off" placeholder="AIza…">
+<label>Модель озвучки</label><input id="gmodel" value="gemini-2.5-flash-preview-tts">
+<p><button onclick="saveGem()">Сохранить ключ</button></p></div>
+<div id="chars"></div>
+<h2>Каталог голосов Gemini (30)</h2>
+<div class="card"><label>Прослушивать для персонажа (берутся его манера, скорость и тон)</label><select id="catchar"><option value="1">Ведущая №1</option><option value="2">Ведущая №2</option></select>
+<label>Фильтр</label><select id="catfilter" onchange="renderCatalog()"><option value="all">Все голоса</option><option value="Ж">Женские (14)</option><option value="М">Мужские (16)</option></select>
+<div id="catalog"></div></div></section>
+
+<section id="jg" class="tab hide"><div class="card"><h3>Генератор джинглов</h3>
+<p class="mut">Голос выбранного персонажа произнесёт ваш текст. Большая гласная посреди слова ставит ударение (кекс рАдіо-кОмпані). Результат можно скачать в MP3. Нужен ключ Gemini API с вкладки «Персонажи».</p>
+<label>Персонаж</label><select id="jg_char" onchange="jgSync()"></select>
+<label>Текст джингла</label><textarea id="jg_text" style="min-height:110px" placeholder="Кекс ФМ. Музика, яка не дає сумувати."></textarea>
+<label>Скорость <span class="val" id="jg_sv"></span></label><input type="range" id="jg_speed" min="0.7" max="1.4" step="0.01" oninput="$('#jg_sv').textContent=this.value+'×'">
+<label>Тон (полутонов) <span class="val" id="jg_pv"></span></label><input type="range" id="jg_pitch" min="-6" max="6" step="0.5" oninput="$('#jg_pv').textContent=this.value">
+<p><button class="main" onclick="jgGen()">▶ Сгенерировать</button> <button onclick="jgDownload('mp3')">⬇ Скачать MP3</button> <button onclick="jgDownload('wav')">⬇ WAV</button> <span id="jg_msg" class="mut"></span></p>
+<audio id="jg_audio" controls></audio></div></section>
 
 <section id="st" class="tab hide"><div id="form"></div><p><button class="main" onclick="saveCfg()">Сохранить настройки</button>
 <span class="mut"> Вступят в силу со следующего выпуска.</span></p></section>
@@ -49,9 +72,8 @@ label{display:block;margin:10px 0 3px;color:var(--mut);font-size:13px}.chk{displ
 <li><b>Permissions → Repository permissions</b>: <b>Contents — Read and write</b> и <b>Actions — Read and write</b>.</li>
 <li>Нажмите <b>Generate token</b>, скопируйте (показывается один раз) и вставьте при подключении.</li></ol>
 <p class="mut">Токен даёт запись только в этот репозиторий. Не вводите его на чужих компьютерах. Если потерян — отзовите на странице токенов GitHub.</p>
-<h3>Как это работает</h3><p class="mut">Панель сохраняет настройки в файл <code>config.json</code> репозитория и кладёт звуки в папку <code>assets/</code>. Бот читает их при каждом выпуске. Расписание (каждые 2 часа) меняется в <code>hourly.yml</code>.</p></section>
+<h3>Персонажи и джинглы</h3><p class="mut">Вкладка «Персонажи» — голос, манера, скорость и тон каждой ведущей с прослушиванием; «Джинглы» — ваш текст голосом персонажа с выгрузкой в MP3. Для прослушивания нужен ключ Gemini API (вводится на вкладке «Персонажи», хранится только в браузере).</p><h3>Как это работает</h3><p class="mut">Панель сохраняет настройки в файл <code>config.json</code> репозитория и кладёт звуки в папку <code>assets/</code>. Бот читает их при каждом выпуске. Расписание (каждые 2 часа) меняется в <code>hourly.yml</code>.</p></section>
 </main><div id="toast"></div>
-<datalist id="voices"><option>Kore<option>Puck<option>Zephyr<option>Aoede<option>Algieba<option>Charon<option>Fenrir<option>Leda<option>Orus<option>Achird<option>Sulafat<option>Gacrux<option>Enceladus</datalist>
 <script>
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -73,15 +95,10 @@ const F=[['Источники и новости',[['channels','Основной 
 ['target_posts','Сколько постов в выпуске: основной канал берётся целиком, недостающее добирается из резервного','num',8,1,40],
 ['dedupe','Не повторять посты, которые уже звучали в последних выпусках','bool',true],
 ['min_sentences','Минимум предложений в посте','num',1,1,5],['max_posts','Максимум постов за раз','num',40,5,80]]],
-['Ведущие и голос',[
-['station','Название службы новостей (в тексте и описаниях)','text','Служба новин Кекс-радіокомпані'],
+['Название станции',[
+['station','Название службы новин (в тексте и описаниях)','text','Служба новин Кекс-радіокомпані'],
 ['station_spoken','Как название произносится (большая гласная = ударение)','text','Служба новин кекс рАдіо-кОмпані'],
-['host1_name','Имя ведущей №1','text','Ангеліна'],['host1_voice','Голос №1 (выберите по образцам voice_samples.py; женские: Zephyr, Aoede, Autonoe, Callirrhoe, Kore, Leda…)','voice','Zephyr'],
-['host1_speed','Скорость речи №1 (1.0 = обычная)','rng',1.0,0.8,1.2,0.01,'×'],['host1_pitch','Высота голоса №1 (полутонов; плюс = выше, тоньше и звонче)','rng',2,-6,6,0.5,''],
-['host1_style','Манера голоса №1 (по-английски; пусто = встроенная)','area',''],
-['host2_name','Имя ведущей №2','text','Лєра'],['host2_voice','Голос №2 (ровные и низкие: Kore, Gacrux, Sulafat, Achernar)','voice','Kore'],
-['host2_speed','Скорость речи №2 (1.0 = обычная)','rng',1.0,0.8,1.2,0.01,'×'],['host2_pitch','Высота голоса №2 (полутонов; минус = ниже и глубже)','rng',-2,-6,6,0.5,''],
-['host2_style','Манера голоса №2 (по-английски; пусто = встроенная)','area','']]],
+['pron_dict','Словарь произношения: по строке «слово = как произнести» (большая гласная = ударение; проверяйте на слух)','area','ЗСУ = зе ес у\nППО = пе пе о\nБпЛА = бе пе ел а\nКиїв = КИїв\nХарків = ХАрків\nДніпро = ДніпрО\nОдеса = ОдЕса\nЗапоріжжя = ЗапорІжжя\nМиколаїв = МиколаЇв\nХерсон = ХерсОн\nЧернігів = ЧернІгів\nПолтава = ПолтАва\nСуми = СУми\nРівне = РІвне\nЖитомир = ЖитОмир\nВінниця = ВІнниця\nЧеркаси = ЧеркАси']]],
 ['Озвучка Gemini (запасного голоса нет)',[
 ['tts_models','Модели озвучки по очереди (через запятую, лучшие первыми)','text','gemini-2.5-flash-preview-tts,gemini-2.5-pro-preview-tts'],
 ['tts_retry_min','Сколько минут настойчиво стучаться в Gemini (потом повторяется прошлый выпуск)','num',40,5,120],
@@ -90,24 +107,34 @@ const F=[['Источники и новости',[['channels','Основной 
 ['pack_evening','Вечер (17:00–21:59)','sel','deep_house',PK],['pack_night','Ночь (22:00–4:59)','sel','night_chill',PK]]],
 ['Музыка и звуки',[['bed_enabled','Фоновая музыка под выпуском','bool',true],['bed_under_db','Фон под голосом (дБ относительно голоса; меньше = тише)','rng',-20,-40,-6,1,' дБ'],
 ['bed_gap_db','Фон в паузах (дБ)','rng',-12,-30,-3,1,' дБ'],['jingles_enabled','Джинглы и перебивки','bool',true],
+['teaser_enabled','Тизер в начале: «Головне зараз: …» поверх нарастания, потом джингл','bool',true],
+['heavy_pause_ms','Пауза вокруг тяжёлой новости (погибшие, обстрелы), мс: без перебивок','num',1500,500,4000],
+['voice_fx_enabled','Эфирная обработка голоса (компрессор, де-эссер, присутствие)','bool',true],
+['voice_fx_amount','Сила обработки голоса','rng',0.7,0,1,0.05,''],
+['weather_fx_enabled','Звуки погоды под блоком погоды (дождь, ветер, гроза, снег, мороз, солнце)','bool',true],
+['weather_fx_db','Громкость звуков погоды относительно голоса','rng',-22,-40,-10,1,' дБ'],
 ['pause_before_ms','Тишина после новости перед перебивкой, мс','num',300,100,2000],['pause_after_ms','Тишина после перебивки перед следующей новостью, мс','num',150,0,2000],
 ['pause_plain_ms','Пауза там, где перебивки нет, мс','num',500,200,3000],
 ['jingle_gain_db','Громкость джинглов','rng',0,-12,6,1,' дБ'],['sting_gain_db','Громкость перебивок','rng',0,-12,6,1,' дБ']]],
-['Вставки',[['weather_enabled','Погода в конце выпуска','bool',true],['weather_where','Как сказать «в городе» (напр. у Києві)','text','у Києві'],['lat','Широта','num',50.45,-90,90,'any'],['lon','Долгота','num',30.52,-180,180,'any'],
+['Вставки',[['safety_enabled','Одна фраза про безопасность в выпуске с обстрелами или тревогами','bool',true],
+['weather_enabled','Погода в конце выпуска','bool',true],['weather_where','Как сказать «в городе» (напр. у Києві)','text','у Києві'],['lat','Широта','num',50.45,-90,90,'any'],['lon','Долгота','num',30.52,-180,180,'any'],
 ['weather_lead','Явный вступ к погоде (по одному варианту в строке, выбирается случайный)','area','І про погоду в Києві.\nА тепер про погоду в Києві.\nІ нарешті про погоду в Києві.'],
 ['telegram_url','Ссылка на ваш телеграм-канал новостей (только в описании выпуска, вслух не звучит)','text','https://t.me/kexxxfm'],
 ['donate_enabled','В конце выпуска ведущая вариативно говорит про донат («по ссылке на нашем сайте» + адрес)','bool',true],
 ['donate_spoken','Как произносится адрес сайта (по словам и буквам)','text','кекс еф ем крапка кієв крапка ю а'],
 ['donate_url','Ссылка «поддержать станцию» на странице подкаста и в описаниях (вслух не произносится; пусто = убрать)','text','https://keksfm.kiev.ua'],
 ['extra_instructions','Доп. указания редактору (стиль, что пропускать)','area','']]],
+['Публикация в Telegram',[
+['tg_post_enabled','Публиковать каждый готовый выпуск (mp3) в Telegram-канале','bool',true],
+['tg_post_channel','Канал для публикации (@имя); публикует ваш аккаунт или бот — он должен быть админом канала','text','@kexxxfm']]],
 ['Публикация',[['enabled','Выпуски включены (снимите галочку, чтобы поставить на паузу)','bool',true],['keep_episodes','Сколько выпусков хранить','num',24,2,60],
 ['mp3_bitrate','Качество mp3 (стерео; больше = лучше звук, тяжелее файл)','sel','192k',['64k','96k','128k','192k','256k']],
 ['feed_title','Название подкаста (тег title в RSS и заголовок сайта)','text','KEXXX NEWS'],
 ['feed_desc','Описание подкаста (тег description в RSS)','text','Новини коротко і без хєрні'],
 ['feed_email','E-mail владельца в RSS (нужен каталогам для подтверждения)','text','keksfm.kiev@gmail.com'],
 ['rss_explicit','Пометка «explicit» в RSS (по умолчанию выключена)','bool',false]]]];
-let CFG={},SHA=null;
-function renderForm(){$('#form').innerHTML=F.map(([g,fs])=>`<h2>${g}</h2><div class="card">`+fs.map(([k,l,t,d,a,b,st,u])=>{const v=CFG[k]??d,id='f_'+k;
+let CFG=null,SHA=null;
+function renderForm(){$('#form').innerHTML=F.map(([g,fs])=>`<h2>${g}</h2><div class="card">`+fs.map(([k,l,t,d,a,b,st,u])=>{const v=(CFG||{})[k]??d,id='f_'+k;
  if(t=='bool')return`<label class="chk"><input type="checkbox" id="${id}" ${v?'checked':''}> ${l}</label>`;
  let i;if(t=='area')i=`<textarea id="${id}">${esc(v)}</textarea>`;
  else if(t=='sel')i=`<select id="${id}">${a.map(o=>`<option ${o==v?'selected':''}>${o}</option>`).join('')}</select>`;
@@ -117,10 +144,11 @@ function renderForm(){$('#form').innerHTML=F.map(([g,fs])=>`<h2>${g}</h2><div cl
  return`<label>${l}${t=='rng'?`<span class="val">${v}${u}</span>`:''}</label>${i}`}).join('')+'</div>').join('')}
 async function loadCfg(){const r=await api(`/contents/config.json?ref=${S.branch}`,{soft:1});
  if(r){CFG=JSON.parse(unb64(r.content));SHA=r.sha}else{CFG={};SHA=null}renderForm()}
-async function saveCfg(){const o={};
- F.forEach(([g,fs])=>fs.forEach(([k,l,t])=>{const e=$('#f_'+k);o[k]=t=='bool'?e.checked:(t=='num'||t=='rng')?Number(e.value):e.value}));
- try{const r=await api('/contents/config.json',{method:'PUT',body:JSON.stringify({message:'Panel: update config',content:b64(JSON.stringify(o,null,1)),sha:SHA||undefined,branch:S.branch})});
-  SHA=r.content.sha;CFG=o;toast('Сохранено ✓')}catch(e){toast('Не сохранилось: '+e.message,1)}}
+async function commit(u){await ensureCfg();const o={...CFG,...u};
+ const r=await api('/contents/config.json',{method:'PUT',body:JSON.stringify({message:'Panel: update config',content:b64(JSON.stringify(o,null,1)),sha:SHA||undefined,branch:S.branch})});SHA=r.content.sha;CFG=o}
+async function saveCfg(){const u={};
+ F.forEach(([g,fs])=>fs.forEach(([k,l,t])=>{const e=$('#f_'+k);u[k]=t=='bool'?e.checked:(t=='num'||t=='rng')?Number(e.value):e.value}));
+ try{await commit(u);toast('Сохранено ✓')}catch(e){toast('Не сохранилось: '+e.message,1)}}
 
 const K=[['open','Начало выпуска (джингл)'],['close','Конец выпуска (джингл)'],['sting','Перебивки между новостями'],['weather','Особая перебивка перед погодой'],['bed','Фоновая музыка']];
 async function loadSounds(){const L=(await api(`/contents/assets?ref=${S.branch}`,{soft:1}))||[];
@@ -143,10 +171,105 @@ async function loadOv(){
   return`<div class="row"><span class="${c}">${c=='ok'?'✔':c=='bad'?'✖':'…'} ${new Date(x.created_at).toLocaleString('ru')}</span><a href="${x.html_url}" target="_blank">лог</a></div>`}).join('')||'<span class="mut">Запусков пока нет</span>'}catch(e){$('#runs').textContent=e.message}
  try{const e=await(await fetch('../episodes.json',{cache:'no-store'})).json();$('#eps').innerHTML=e.slice(0,8).map(x=>`<div class="card"><b>${esc(x.title)}</b><audio controls preload="none" src="../${esc(x.file)}"></audio></div>`).join('')}catch(e){$('#eps').innerHTML='<p class="mut">Выпусков пока нет</p>'}
  $('#links').innerHTML='<a href="../" target="_blank">Сайт</a> · <a href="../feed.xml" target="_blank">RSS</a>'}
-async function run(){try{await api(`/actions/workflows/${S.wf}/dispatches`,{method:'POST',body:JSON.stringify({ref:S.branch})});toast('Запущено. Выпуск будет готов через несколько минут.');setTimeout(loadOv,8000)}catch(e){toast(e.message,1)}}
+async function run(){try{const body={ref:S.branch};if($('#tgpost')&&$('#tgpost').checked)body.inputs={post_to_telegram:'true'};await api(`/actions/workflows/${S.wf}/dispatches`,{method:'POST',body:JSON.stringify(body)});toast('Запущено. Выпуск будет готов через несколько минут.');setTimeout(loadOv,8000)}catch(e){toast(e.message,1)}}
+
+/* ===== Персонажи и генератор джинглов ===== */
+const VOICES=[['Zephyr','Ж','яркий'],['Kore','Ж','уверенный, ровный'],['Leda','Ж','молодой'],['Aoede','Ж','лёгкий'],['Callirrhoe','Ж','непринуждённый'],['Autonoe','Ж','яркий'],['Despina','Ж','гладкий'],['Erinome','Ж','чёткий'],['Laomedeia','Ж','бодрый'],['Achernar','Ж','мягкий'],['Gacrux','Ж','зрелый'],['Pulcherrima','Ж','напористый'],['Vindemiatrix','Ж','нежный'],['Sulafat','Ж','тёплый'],
+['Puck','М','бодрый'],['Charon','М','информативный'],['Fenrir','М','возбуждённый'],['Orus','М','уверенный'],['Enceladus','М','с придыханием'],['Iapetus','М','чёткий'],['Umbriel','М','непринуждённый'],['Algieba','М','гладкий'],['Algenib','М','хрипловатый'],['Rasalgethi','М','информативный'],['Alnilam','М','уверенный'],['Schedar','М','ровный'],['Achird','М','дружелюбный'],['Zubenelgenubi','М','разговорный'],['Sadachbia','М','живой'],['Sadaltager','М','знающий']];
+// Манеры чтения: id -> [название, описание подачи для озвучки]. Такой же набор в bot.py (MANNERS) — менять в обоих местах.
+const MANNERS={strict:['Строгий диктор','SERIOUS, composed, firm newsroom delivery, no smiling and no softness'],
+brisk:['Энергичная, динамичная','SERIOUS but brisk, crisp and energetic newsroom delivery with short punchy phrasing, no smiling'],
+weighty:['Ровная, весомая','SERIOUS, weighty and measured delivery with deliberate gravitas and a steady pause before figures'],
+warm:['Серьёзная, но человечная','SERIOUS yet human and sincere delivery, clear and warm in tone but never cheerful'],
+report:['Репортажная, живая','SERIOUS reporter-style delivery: quick, clear and factual, like a live report from the scene']};
+const STRESS='(a capitalized vowel in the middle of a word marks the stressed vowel)';
+const SERIOUS='Our country is at war: for attacks, explosions, casualties and deaths speak gravely, with a heavy restrained tone. Crisp Ukrainian diction, pronounce every ending in full, correct word stress '+STRESS+', and leave a long, clear pause of about two seconds after each separate item:';
+const buildStyle=(persona,manner)=>`Read as a radio news host: ${persona}; ${(MANNERS[manner]||MANNERS.strict)[1]}. `+SERIOUS;
+const CH={1:{name:'Ангеліна',spoken:'АнгелІна',voice:'Zephyr',speed:0.95,pitch:2,manner:'brisk',
+ persona:`a 19-year-old young woman with a feminine, clear, bright, HIGH-pitched voice in a high female register, mature, confident and NOT childish, not a girl's voice`},
+ 2:{name:'Лєра',spoken:'ЛЄра',voice:'Kore',speed:0.95,pitch:-2,manner:'weighty',
+ persona:`a young woman with a LOW, deep, smooth female voice with a warm chest resonance, confident and NOT childish`}};
+const SAMPLE='Служба новин кекс рАдіо-кОмпані. З вами знову {spoken}. Уночі росіяни атакували КИїв ударними безпілотниками: збито двадцять дев\'ять із тридцяти двох, є двоє загиблих і п\'ятнадцятеро поранених.';
+const ensureCfg=async()=>{if(CFG===null)await loadCfg()};
+const GEMS=()=>{try{return JSON.parse(localStorage.getItem('kex_gem')||'{}')}catch(e){return{}}};
+function saveGem(){localStorage.setItem('kex_gem',JSON.stringify({key:$('#gkey').value.trim(),model:$('#gmodel').value.trim()||'gemini-2.5-flash-preview-tts'}));toast('Ключ сохранён в этом браузере ✓')}
+
+/* --- звук: PCM -> Float32, смена высоты и скорости, WAV и MP3 --- */
+function pcmToF32(b64){const bin=atob(b64),n=bin.length>>1,o=new Float32Array(n);for(let i=0;i<n;i++){let v=bin.charCodeAt(2*i)|(bin.charCodeAt(2*i+1)<<8);if(v&0x8000)v-=0x10000;o[i]=v/32768}return o}
+function resample(x,ratio){const n=Math.floor(x.length*ratio),o=new Float32Array(n),st=1/ratio;for(let i=0;i<n;i++){const p=i*st,i0=Math.floor(p),f=p-i0;o[i]=(x[i0]||0)*(1-f)+(x[i0+1]||0)*f}return o}
+function wsola(x,rate,sr=24000){ // растяжение/сжатие во времени без смены высоты; rate>1 = быстрее
+ if(Math.abs(rate-1)<0.01)return x;const W=Math.round(sr*0.03),H=W>>1,S=Math.round(sr*0.006),outLen=Math.floor(x.length/rate);
+ const out=new Float32Array(outLen+2*W),nr=new Float32Array(outLen+2*W),win=new Float32Array(W);
+ for(let i=0;i<W;i++)win[i]=0.5-0.5*Math.cos(2*Math.PI*(i+0.5)/W);
+ let prev=0;for(let k=0;;k++){const o=k*H;if(o>=outLen)break;const a=Math.round(k*H*rate);if(a+W+S>=x.length)break;let best=a;
+  if(k>0){const tg=prev+H;if(tg+W<x.length){let bc=-Infinity;for(let d=-S;d<=S;d+=2){const c=a+d;if(c<0||c+W>=x.length)continue;let s=0;for(let i=0;i<W;i+=4)s+=x[tg+i]*x[c+i];if(s>bc){bc=s;best=c}}}}
+  for(let i=0;i<W;i++){out[o+i]+=x[best+i]*win[i];nr[o+i]+=win[i]}prev=best}
+ for(let i=0;i<out.length;i++)if(nr[i]>1e-3)out[i]/=nr[i];return out.subarray(0,outLen)}
+function renderVoice(pcm24,pitch,speed){ // как в боте: сначала высота (пересэмплирование), затем темп без смены высоты
+ const f=Math.pow(2,pitch/12);let y=resample(pcm24,1/f);y=wsola(y,speed/f);y=resample(y,44100/24000);
+ let pk=0;for(let i=0;i<y.length;i++)pk=Math.max(pk,Math.abs(y[i]));if(pk>0){const g=0.89/pk;for(let i=0;i<y.length;i++)y[i]*=g}return y}
+const toI16=f=>{const o=new Int16Array(f.length);for(let i=0;i<f.length;i++)o[i]=Math.max(-1,Math.min(1,f[i]))*32767;return o};
+function wavBlob(f32,sr=44100){const d=toI16(f32),b=new ArrayBuffer(44+d.length*2),v=new DataView(b),w=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i))};
+ w(0,'RIFF');v.setUint32(4,36+d.length*2,true);w(8,'WAVEfmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,sr,true);v.setUint32(28,sr*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);w(36,'data');v.setUint32(40,d.length*2,true);
+ new Int16Array(b,44).set(d);return new Blob([b],{type:'audio/wav'})}
+async function loadLame(){if(window.lamejs)return;await new Promise((ok,no)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js';s.onload=ok;s.onerror=()=>no(new Error('не загрузился кодировщик MP3 (lamejs); скачайте WAV'));document.head.appendChild(s)})}
+async function mp3Blob(f32,sr=44100,kbps=128){await loadLame();const enc=new lamejs.Mp3Encoder(1,sr,kbps),d=toI16(f32),out=[];
+ for(let i=0;i<d.length;i+=1152){const c=enc.encodeBuffer(d.subarray(i,i+1152));if(c.length)out.push(new Int8Array(c))}const e=enc.flush();if(e.length)out.push(new Int8Array(e));return new Blob(out,{type:'audio/mpeg'})}
+
+/* --- озвучка Gemini прямо из браузера (ключ вводите вы, он остаётся в этом браузере) --- */
+async function gemSpeak(voice,style,text,tries=3){const g=GEMS();if(!g.key)throw new Error('Введите ключ Gemini API и сохраните его');
+ const body={contents:[{parts:[{text:style+'\n\n'+text}]}],generationConfig:{responseModalities:['AUDIO'],speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:voice}}}}};
+ let last;for(let t=1;t<=tries;t++){try{const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${g.model||'gemini-2.5-flash-preview-tts'}:generateContent`,{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':g.key},body:JSON.stringify(body)});
+  const j=await r.json().catch(()=>({}));if(!r.ok){const m=(j.error&&j.error.message)||('HTTP '+r.status);if(r.status==503||r.status==500){last=new Error(m);await new Promise(z=>setTimeout(z,3000*t));continue}throw new Error(r.status==429?'Лимит запросов Gemini (429): подождите минуту или попробуйте завтра. '+m:m)}
+  const d=j.candidates&&j.candidates[0]&&j.candidates[0].content&&j.candidates[0].content.parts&&j.candidates[0].content.parts[0]&&j.candidates[0].content.parts[0].inlineData;if(!d||!d.data)throw new Error('Gemini не вернул звук');return pcmToF32(d.data)}
+  catch(e){if(t==tries||/429|Лимит|ключ|API key/i.test(e.message))throw e;last=e}}throw last}
+async function speakRender(voice,style,text,pitch,speed){return renderVoice(await gemSpeak(voice,style,text),pitch,speed)}
+function playF32(audio,f32){if(audio._u)URL.revokeObjectURL(audio._u);audio._u=URL.createObjectURL(wavBlob(f32));audio.src=audio._u;audio.play().catch(()=>{})}
+
+/* --- вкладка «Персонажи» --- */
+const cv=i=>({name:$('#c'+i+'_name').value.trim(),spoken:$('#c'+i+'_spoken').value.trim(),voice:$('#c'+i+'_voice').value,persona:$('#c'+i+'_persona').value.trim(),manner:$('#c'+i+'_manner').value,
+ custom:$('#c'+i+'_custom').value.trim(),speed:Number($('#c'+i+'_speed').value),pitch:Number($('#c'+i+'_pitch').value)});
+const chStyle=c=>c.manner=='custom'&&c.custom?c.custom:buildStyle(c.persona,c.manner);
+const cd=(i,k)=>{const v=(CFG||{})['host'+i+'_'+k];return v===undefined||v===''?CH[i][k]:v};
+const voiceOpts=sel=>['Ж','М'].map(g=>`<optgroup label="${g=='Ж'?'Женские':'Мужские'}">`+VOICES.filter(v=>v[1]==g).map(v=>`<option value="${v[0]}" ${v[0]==sel?'selected':''}>${v[0]} — ${v[2]}</option>`).join('')+'</optgroup>').join('');
+function charCard(i){const manner=cd(i,'manner'),custom=(CFG||{})['host'+i+'_style']||'',sm=localStorage.getItem('kex_sample'+i)||SAMPLE.replace('{spoken}',cd(i,'spoken'));
+ return`<div class="card"><h3>Ведущая №${i}</h3>
+<label>Имя (в тексте и описаниях)</label><input id="c${i}_name" value="${esc(cd(i,'name'))}">
+<label>Как произносится имя (большая гласная = ударение, например АнгелІна, ЛЄра)</label><input id="c${i}_spoken" value="${esc(cd(i,'spoken'))}">
+<label>Голос</label><select id="c${i}_voice">${voiceOpts(cd(i,'voice'))}</select>
+<label>Описание голоса (по-английски: возраст, тембр, регистр)</label><textarea id="c${i}_persona">${esc(cd(i,'persona'))}</textarea>
+<label>Манера чтения новостей</label><select id="c${i}_manner">${Object.entries(MANNERS).map(([k,v])=>`<option value="${k}" ${k==manner?'selected':''}>${v[0]}</option>`).join('')}<option value="custom" ${manner=='custom'?'selected':''}>Свой текст (ниже)</option></select>
+<label>Свой промпт манеры (по-английски; работает при выборе «Свой текст»)</label><textarea id="c${i}_custom" placeholder="Read as…">${esc(custom)}</textarea>
+<label>Скорость <span class="val" id="c${i}_sv">${cd(i,'speed')}×</span></label><input type="range" id="c${i}_speed" min="0.7" max="1.4" step="0.01" value="${cd(i,'speed')}" oninput="$('#c${i}_sv').textContent=this.value+'×'">
+<label>Тон (полутонов; плюс = выше, минус = ниже) <span class="val" id="c${i}_pv">${cd(i,'pitch')}</span></label><input type="range" id="c${i}_pitch" min="-6" max="6" step="0.5" value="${cd(i,'pitch')}" oninput="$('#c${i}_pv').textContent=this.value">
+<label>Тестовая фраза (семпл)</label><textarea id="c${i}_sample" oninput="localStorage.setItem('kex_sample${i}',this.value)">${esc(sm)}</textarea>
+<p><button class="main" onclick="listen(${i})">▶ Прослушать</button> <button onclick="saveChar(${i})">💾 Сохранить персонажа</button> <span id="c${i}_msg" class="mut"></span></p>
+<audio id="c${i}_audio" controls></audio>
+<details><summary class="mut">Итоговый промпт озвучки</summary><pre id="c${i}_prompt" class="mut" style="white-space:pre-wrap"></pre></details></div>`}
+function showPrompt(i){const e=$('#c'+i+'_prompt');if(e)e.textContent=chStyle(cv(i))}
+async function listen(i,voice){const c=cv(i),m=$('#c'+i+'_msg');showPrompt(i);m.textContent='Генерирую…';
+ try{const f=await speakRender(voice||c.voice,chStyle(c),$('#c'+i+'_sample').value,c.pitch,c.speed);playF32($('#c'+i+'_audio'),f);m.textContent=(f.length/44100).toFixed(1)+' с'}catch(e){m.textContent='';toast(e.message,1)}}
+async function saveChar(i){const c=cv(i),u={};u['host'+i+'_name']=c.name;u['host'+i+'_spoken']=c.spoken;u['host'+i+'_voice']=c.voice;u['host'+i+'_persona']=c.persona;u['host'+i+'_manner']=c.manner;
+ u['host'+i+'_style']=c.manner=='custom'?c.custom:'';u['host'+i+'_speed']=c.speed;u['host'+i+'_pitch']=c.pitch;
+ try{await commit(u);toast('Персонаж №'+i+' сохранён ✓ (вступит в силу со следующего выпуска)')}catch(e){toast('Не сохранилось: '+e.message,1)}}
+function renderCatalog(){const f=$('#catfilter').value;$('#catalog').innerHTML=VOICES.filter(v=>f=='all'||v[1]==f).map(v=>`<div class="row"><span><b>${v[0]}</b> <small>${v[1]=='Ж'?'жен.':'муж.'}, ${v[2]}</small></span><span><button onclick="listen(+$('#catchar').value,'${v[0]}')">▶</button> <button onclick="pick(1,'${v[0]}')">→ №1</button> <button onclick="pick(2,'${v[0]}')">→ №2</button></span></div>`).join('')}
+function pick(i,v){$('#c'+i+'_voice').value=v;showPrompt(i);toast(`Голос ${v} выбран для ведущей №${i} (не забудьте «Сохранить персонажа»)`)}
+async function renderChars(){await ensureCfg();const g=GEMS();$('#gkey').value=g.key||'';$('#gmodel').value=g.model||'gemini-2.5-flash-preview-tts';
+ $('#chars').innerHTML=charCard(1)+charCard(2);[1,2].forEach(i=>{['persona','manner','custom'].forEach(k=>$('#c'+i+'_'+k).addEventListener('input',()=>showPrompt(i)));showPrompt(i)});renderCatalog()}
+
+/* --- вкладка «Джинглы» --- */
+const JG={f32:null};
+async function renderJingles(){await ensureCfg();$('#jg_char').innerHTML=[1,2].map(i=>`<option value="${i}">${esc(cd(i,'name'))} (голос ${esc(cd(i,'voice'))})</option>`).join('');jgSync()}
+function jgSync(){const i=+$('#jg_char').value||1;$('#jg_speed').value=cd(i,'speed');$('#jg_pitch').value=cd(i,'pitch');$('#jg_sv').textContent=cd(i,'speed')+'×';$('#jg_pv').textContent=cd(i,'pitch')}
+async function jgGen(){const i=+$('#jg_char').value||1,t=$('#jg_text').value.trim(),m=$('#jg_msg');if(!t)return toast('Введите текст джингла',1);
+ const c={persona:cd(i,'persona'),manner:cd(i,'manner'),custom:(CFG||{})['host'+i+'_style']||''};m.textContent='Генерирую…';
+ try{JG.f32=await speakRender(cd(i,'voice'),chStyle(c),t,Number($('#jg_pitch').value),Number($('#jg_speed').value));playF32($('#jg_audio'),JG.f32);m.textContent=(JG.f32.length/44100).toFixed(1)+' с, готово'}catch(e){m.textContent='';toast(e.message,1)}}
+function dl(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},2000)}
+async function jgDownload(fmt){if(!JG.f32)return toast('Сначала сгенерируйте джингл',1);const n='jingle_'+new Date().toISOString().slice(0,16).replace(/[-:T]/g,'');
+ try{if(fmt=='mp3')dl(await mp3Blob(JG.f32),n+'.mp3');else dl(wavBlob(JG.f32),n+'.wav')}catch(e){toast(e.message,1)}}
 
 function tab(t){$$('.tab').forEach(e=>e.classList.toggle('hide',e.id!=t));$$('#nav button').forEach(b=>b.classList.toggle('on',b.dataset.t==t));
- if(t=='ov')loadOv();if(t=='st')loadCfg().catch(e=>toast(e.message,1));if(t=='sd')loadSounds().catch(e=>toast(e.message,1))}
+ if(t=='ov')loadOv();if(t=='st')loadCfg().catch(e=>toast(e.message,1));if(t=='sd')loadSounds().catch(e=>toast(e.message,1));if(t=='ch')renderChars().catch(e=>toast(e.message,1));if(t=='jg')renderJingles().catch(e=>toast(e.message,1))}
 function view(){const ok=!!S.token;$('#connect').classList.toggle('hide',ok);$('#nav').classList.toggle('hide',!ok);$('#out').classList.toggle('hide',!ok);
  $$('.tab').forEach(e=>e.classList.add('hide'));$('#own').value=S.owner;$('#rep').value=S.repo;if(ok)tab('ov')}
 async function connect(){S.token=$('#tok').value.trim()||S.token;S.owner=$('#own').value.trim();S.repo=$('#rep').value.trim();
