@@ -102,6 +102,21 @@ SQUALL_MS = opt("squall_ms", "SQUALL_MS", float(weather.SQUALL_MS))  # пори�
 DONATE_URL = opt("donate_url", "DONATE_URL", "https://keksfm.kiev.ua")
 DONATE_ENABLED = opt("donate_enabled", "DONATE_ENABLED", True)  # в кінці випуску ведуча вариативно говорить про донат
 DONATE_SPOKEN = opt("donate_spoken", "DONATE_SPOKEN", "кекс еф ем крапка кієв крапка ю а")  # як вимовляється keksfm.kiev.ua
+TEASER_ENABLED = opt("teaser_enabled", "TEASER_ENABLED", True)    # тизер «Головне зараз…» перед джинглом
+SAFETY_ENABLED = opt("safety_enabled", "SAFETY_ENABLED", True)    # одна фраза про безпеку на випуск за потреби
+WEATHER_FX_ENABLED = opt("weather_fx_enabled", "WEATHER_FX_ENABLED", True)  # звуки дощу/вітру/грози під погодою
+WEATHER_FX_DB = opt("weather_fx_db", "WEATHER_FX_DB", -22.0)      # їхня гучність відносно голосу, дБ
+VOICE_FX_ENABLED = opt("voice_fx_enabled", "VOICE_FX_ENABLED", True)  # ефірна обробка голосу
+VOICE_FX_AMOUNT = opt("voice_fx_amount", "VOICE_FX_AMOUNT", 0.7)
+HEAVY_PAUSE_MS = opt("heavy_pause_ms", "HEAVY_PAUSE_MS", 1500)    # пауза навколо важкої новини (без перебивок)
+TG_POST_ENABLED = opt("tg_post_enabled", "TG_POST_ENABLED", True)  # публікувати випуск у Telegram-каналі
+TG_POST_CHANNEL = opt("tg_post_channel", "TG_POST_CHANNEL", "@kexxxfm")
+DEFAULT_PRON = "\n".join([
+    "ЗСУ = зе ес у", "ППО = пе пе о", "БпЛА = бе пе ел а", "Київ = КИїв", "Харків = ХАрків", "Дніпро = ДніпрО",
+    "Одеса = ОдЕса", "Запоріжжя = ЗапорІжжя", "Миколаїв = МиколаЇв", "Херсон = ХерсОн", "Чернігів = ЧернІгів",
+    "Полтава = ПолтАва", "Суми = СУми", "Рівне = РІвне", "Житомир = ЖитОмир", "Вінниця = ВІнниця", "Черкаси = ЧеркАси",
+])
+PRON_DICT = opt("pron_dict", "PRON_DICT", DEFAULT_PRON)  # словник вимови з панелі: рядки «слово = вимова»
 TELEGRAM_URL = opt("telegram_url", "TELEGRAM_URL", "https://t.me/kexxxfm")  # лише в описі випуску, вголос не звучить
 WEATHER_LEAD = opt("weather_lead", "WEATHER_LEAD",
                    "І про погоду в Києві.\nА тепер про погоду в Києві.\nІ нарешті про погоду в Києві.")
@@ -115,22 +130,47 @@ _STRESS = "(a capitalized vowel in the middle of a word marks the stressed vowel
 _SERIOUS = ("Our country is at war: for attacks, explosions, casualties and deaths speak gravely, with a "
             "heavy restrained tone. Crisp Ukrainian diction, pronounce every ending in full, correct word stress "
             + _STRESS + ", and leave a long, clear pause of about two seconds after each separate item:")
+# Манери читання новин: id -> (назва в панелі, опис подачі для озвучки англійською, вказівка щодо побудови речень).
+# УВАГА: такий самий набір є в panel.html (вкладка «Персонажі»); якщо змінюєте тут — змініть і там.
+MANNERS = {
+    "strict": ("Строгий диктор", "SERIOUS, composed, firm newsroom delivery, no smiling and no softness",
+               "речення рівні й чіткі, без вигуків"),
+    "brisk": ("Енергійна, динамічна", "SERIOUS but brisk, crisp and energetic newsroom delivery with short punchy phrasing, no smiling",
+              "речення короткі й динамічні, до 18 слів, без зайвих слів"),
+    "weighty": ("Рівна, вагома", "SERIOUS, weighty and measured delivery with deliberate gravitas and a steady pause before figures",
+                "речення вагомі й рівні, з комою-паузою перед числами"),
+    "warm": ("Серйозна, але людяна", "SERIOUS yet human and sincere delivery, clear and warm in tone but never cheerful",
+             "речення прості й щирі, без офіціозу"),
+    "report": ("Репортажна, жива", "SERIOUS reporter-style delivery: quick, clear and factual, like a live report from the scene",
+               "речення стислі й фактологічні, як у прямому репортажі"),
+}
+
+
+def compose_style(persona: str, manner_id: str) -> str:
+    """Підказка для озвучки: опис голосу + манера + правила про війну, дикцію, наголоси й паузи."""
+    manner = MANNERS.get(manner_id, MANNERS["strict"])[1]
+    return f"Read as a radio news host: {persona}; {manner}. " + _SERIOUS
+
+
 NAME_1 = opt("host1_name", "HOST1_NAME", "Ангеліна")
-VOICE_1 = opt("host1_voice", "HOST1_VOICE", "Zephyr")  # тимчасово; остаточний вибір — за прослуховуванням voice_samples.py
-SPEED_1 = opt("host1_speed", "HOST1_SPEED", 1.0)
-PITCH_1 = opt("host1_pitch", "HOST1_PITCH", 2.0)     # півтони: плюс = вище (дзвінкіший, «дівочий» голос)
-STYLE_1 = opt("host1_style", "HOST1_STYLE",
-              "Read as Angelina, a 19-year-old young woman, radio news host: a feminine, clear, bright, HIGH-pitched "
-              "voice in a high female register, but mature, confident and NOT childish, not a girl's voice; a SERIOUS, "
-              "composed, firm newsroom delivery, no smiling and no softness. " + _SERIOUS)
+SPOKEN_1 = opt("host1_spoken", "HOST1_SPOKEN", "АнгелІна")  # як ім'я вимовляється (велика голосна = наголос)
+VOICE_1 = opt("host1_voice", "HOST1_VOICE", "Zephyr")  # тимчасово; остаточний вибір — у вкладці «Персонажі»
+SPEED_1 = opt("host1_speed", "HOST1_SPEED", 0.95)
+PITCH_1 = opt("host1_pitch", "HOST1_PITCH", 2.0)     # півтони: плюс = вище
+PERSONA_1 = opt("host1_persona", "HOST1_PERSONA",
+                "a 19-year-old young woman with a feminine, clear, bright, HIGH-pitched voice in a high female register, "
+                "mature, confident and NOT childish, not a girl's voice")
+MANNER_1 = opt("host1_manner", "HOST1_MANNER", "brisk")
+STYLE_1 = opt("host1_style", "HOST1_STYLE", "")  # якщо не порожній — повний власний промпт замість persona + manner
 NAME_2 = opt("host2_name", "HOST2_NAME", "Лєра")
-VOICE_2 = opt("host2_voice", "HOST2_VOICE", "Kore")  # Firm — рівний голос; низький тембр дає зниження висоти нижче
-SPEED_2 = opt("host2_speed", "HOST2_SPEED", 1.0)
-PITCH_2 = opt("host2_pitch", "HOST2_PITCH", -2.0)    # півтони: мінус = нижче (глибший, «грудний» голос)
-STYLE_2 = opt("host2_style", "HOST2_STYLE",
-              "Read as Lyera, a young woman, radio news host: a LOW, deep, smooth female voice with a warm chest "
-              "resonance, confident and NOT childish; a SERIOUS, composed, firm newsroom delivery, no smiling and "
-              "no softness. " + _SERIOUS)
+SPOKEN_2 = opt("host2_spoken", "HOST2_SPOKEN", "ЛЄра")
+VOICE_2 = opt("host2_voice", "HOST2_VOICE", "Kore")
+SPEED_2 = opt("host2_speed", "HOST2_SPEED", 0.95)
+PITCH_2 = opt("host2_pitch", "HOST2_PITCH", -2.0)    # півтони: мінус = нижче
+PERSONA_2 = opt("host2_persona", "HOST2_PERSONA",
+                "a young woman with a LOW, deep, smooth female voice with a warm chest resonance, confident and NOT childish")
+MANNER_2 = opt("host2_manner", "HOST2_MANNER", "weighty")
+STYLE_2 = opt("host2_style", "HOST2_STYLE", "")
 STATION = opt("station", "STATION", "Служба новин Кекс-радіокомпані")  # у тексті; вимовляється як STATION_SPOKEN
 
 PROMPT = """Ти — редакторка і ведуча випуску новин молодіжного танцювального радіо Кекс ФМ.
@@ -138,8 +178,16 @@ PROMPT = """Ти — редакторка і ведуча випуску нов�
 (можуть бути російською або українською).
 
 ЗАВДАННЯ 1 — новини. Для кожної окремої новини напиши ОДНЕ коротке речення українською,
-без вигадування фактів. Дублікати об'єднуй, але НЕ пропускай жодної окремої події: речень має бути стільки, скільки різних подій у постах. Позначки [ОСН] і [РЕЗ] на початку постів — це основний і резервний канали (у відповіді позначок не пиши). ПРІОРИТЕТ — [ОСН]: кожну подію з них включи обов'язково й постав на початок випуску, а події з [РЕЗ] додай після них. Пропускай рекламу, заклики підписатися,
-надіслати новину, донатити, службові підписи та пости без новинного змісту.
+без вигадування фактів. Дублікати об'єднуй, але НЕ пропускай жодної окремої події: речень має бути стільки,
+скільки різних подій у постах. Пропускай рекламу, заклики підписатися, надіслати новину, донатити, службові
+підписи та пости без новинного змісту. Позначки [ОСН] і [РЕЗ] на початку постів — це основний і резервний
+канали (у відповіді позначок не пиши). ПРІОРИТЕТ — [ОСН]: кожну подію з них включи обов'язково й постав на
+початок випуску, а події з [РЕЗ] додай після них.
+ПОРЯДОК І ПОБУДОВА: найважливіше — першим. Кожне речення будуй так: СПОЧАТКУ де й що сталося, ПОТІМ наслідки й
+числа (словами). Коли змінюється регіон чи тема — починай речення короткою зв'язкою («Далі — Харківщина:»,
+«Тепер про інші регіони:», «У Києві:»), але не частіше ніж раз на 2–3 новини. Манера цієї ведучої: {manner_note}.
+ТЯЖКІ НОВИНИ: для кожної новини познач h: 1, якщо вона про загиблих, поранених, масований обстріл чи іншу
+трагедію; інакше h: 0.
 
 МОВА (обов'язково): якщо пост російською — переклади його зміст на українську.
 Уся відповідь має бути ЛИШЕ українською: жодного російського слова і жодних літер ы, э, ъ, ё.
@@ -154,19 +202,21 @@ PROMPT = """Ти — редакторка і ведуча випуску нов�
 (не «прилетіло», не «бавовна»): що сталося, де, скільки загиблих і поранених. Без емоційних оцінок.
 
 ЗАВДАННЯ 2 — привітання (intro). Ведуча цього випуску: {host} (жінка), узгоджуй рід дієслів.
-Напиши 2 короткі речення в такому ПОРЯДКУ. (1) СПОЧАТКУ скажи, що це «{station}» (ДОСЛІВНО, без відмінювання
-і без змін у написанні) і що це найкоротші новини — щоразу інакше: «найкоротші новини», «найкоротший випуск
-новин», «новини коротко» (слово «найкоротші» або «найкоротший» обов'язкове). (2) ПОТІМ назви себе у формі
-на кшталт «З вами знову {host}», «Для вас працює {host}», «В ефірі {host}», «{host} знову з вами»,
-«Новини для вас читає {host}» — щоразу інакше. Привітання за часом доби (зараз {part}) можна додати одним
-словом на самому початку. НІКОЛИ не починай речення зі слова «Це» і не пиши «Це — {host}»; не вживай
-«мене звати», «моє ім'я». Манера цього разу: {vibe}. НЕ називай конкретний час, години, хвилини, дату чи
-день тижня. Без жартів, без штампів на кшталт «шановні слухачі».
+Напиши 2 короткі речення в такому ПОРЯДКУ. (1) СПОЧАТКУ назви «{station}» (ДОСЛІВНО, без відмінювання і без змін
+у написанні) і скажи, що це випуск новин — щоразу інакше («випуск новин», «новини», «новини для вас»).
+(2) ПОТІМ назви себе у формі на кшталт «З вами знову {host}», «Для вас працює {host}», «В ефірі {host}»,
+«{host} знову з вами», «Новини для вас читає {host}» — щоразу інакше. Привітання за часом доби (зараз {part})
+можна додати одним словом на самому початку. НІКОЛИ не починай речення зі слова «Це» і не пиши «Це — {host}»;
+не вживай «мене звати», «моє ім'я»; слів «найкоротші» і «найкоротший» НЕ вживай. Манера цього разу: {vibe}.
+НЕ називай конкретний час, години, хвилини, дату чи день тижня. Без жартів, без штампів на кшталт «шановні слухачі».
 
-ЗАВДАННЯ 3 — прощання (outro). 1–2 короткі речення в такому ПОРЯДКУ. (1) СПОЧАТКУ скажи, що найкоротші
-новини «Кекс ФМ» завершено (щоразу інакше; слова «Кекс ФМ» обов'язкові). (2) ПОТІМ назви себе у формі
-«З вами була {host}». (3) НАПРИКІНЦІ обов'язково побажай «{wish}» (саме цими словами). Без жартів і без
-конкретного часу. Заклик до донату НЕ додавай: він звучить окремо перед прощанням.
+ЗАВДАННЯ 3 — прощання (outro). 1–2 короткі речення в такому ПОРЯДКУ. (1) СПОЧАТКУ скажи, що новини «Кекс ФМ»
+завершено (щоразу інакше; слова «Кекс ФМ» обов'язкові). (2) ПОТІМ назви себе у формі «З вами була {host}».
+(3) НАПРИКІНЦІ обов'язково побажай «{wish}» (саме цими словами). Слів «найкоротші» і «найкоротший» НЕ вживай.
+Без жартів і без конкретного часу. Заклик до донату НЕ додавай: він звучить окремо перед прощанням.
+
+ЗАВДАННЯ 4 — тизер (teaser): ОДНЕ речення до 14 слів — головна новина випуску, без цифр, починається словами
+«Головне зараз:». Це речення звучить ПЕРЕД привітанням.
 {closing_task}{extra}
 Відповідь — лише JSON-об'єкт з ключами {keys}.
 
@@ -369,24 +419,29 @@ VIBES = [
     "серйозно й упевнено",
 ]
 INTRO_FALLBACKS = [
-    "{station} — найкоротші новини. З вами знову {host}.",
-    "{station}: найкоротший випуск новин. Для вас працює {host}.",
-    "В ефірі {station}, найкоротші новини. {host} знову з вами.",
-    "{station}, новини коротко: найкоротший випуск. Новини для вас читає {host}.",
+    "{station}. З вами знову {host}.",
+    "{station} — випуск новин. Для вас працює {host}.",
+    "В ефірі {station}. {host} знову з вами.",
+    "{station}, новини для вас. Новини читає {host}.",
 ]
 OUTRO_FALLBACKS = [
-    "Найкоротші новини Кекс ФМ завершено. З вами була {host}. {Wish}!",
-    "Кекс ФМ: найкоротші новини позаду. З вами була {host}. {Wish}!",
-    "Найкоротший випуск новин Кекс ФМ завершено. З вами була {host}. {Wish}!",
+    "Новини Кекс ФМ завершено. З вами була {host}. {Wish}!",
+    "Кекс ФМ: випуск новин завершено. З вами була {host}. {Wish}!",
+    "Новини на Кекс ФМ завершено. З вами була {host}. {Wish}!",
 ]
 
 
 def host_for(now: datetime, last_id: str | None = None) -> dict:
     """Дві ведучі чергуються: беремо «наступну» після тієї, що вела попередній випуск
     (за записом у стрічці). Без запису — за парністю години ефіру."""
+    def mk(hid, name, spoken_name, voice, style, persona, manner, speed, pitch):
+        info = MANNERS.get(manner, MANNERS["strict"])
+        return {"id": hid, "name": name, "spoken": spoken_name, "gemini": voice,
+                "style": style.strip() or compose_style(persona, manner), "speed": speed, "pitch": pitch,
+                "manner": manner, "note": info[2], "gender": "жінка"}
     hosts = {
-        "1": {"name": NAME_1, "gemini": VOICE_1, "style": STYLE_1, "speed": SPEED_1, "pitch": PITCH_1},
-        "2": {"name": NAME_2, "gemini": VOICE_2, "style": STYLE_2, "speed": SPEED_2, "pitch": PITCH_2},
+        "1": mk("1", NAME_1, SPOKEN_1, VOICE_1, STYLE_1, PERSONA_1, MANNER_1, SPEED_1, PITCH_1),
+        "2": mk("2", NAME_2, SPOKEN_2, VOICE_2, STYLE_2, PERSONA_2, MANNER_2, SPEED_2, PITCH_2),
     }
     if last_id == "1":
         hid = "2"
@@ -394,7 +449,7 @@ def host_for(now: datetime, last_id: str | None = None) -> dict:
         hid = "1"
     else:
         hid = "1" if (now.hour // 2) % 2 == 0 else "2"
-    return {**hosts[hid], "id": hid, "gender": "жінка"}
+    return hosts[hid]
 
 
 def day_part(now: datetime) -> tuple[str, str]:
@@ -417,7 +472,8 @@ def make_context(now: datetime, host: dict, wsum: dict | None = None) -> dict:
     part, wish = day_part(now)
     ctx = {"host": host["name"], "gender": host["gender"], "station": STATION,
            "time": f"{now:%H:%M}", "part": part, "wish": wish, "vibe": random.choice(VIBES),
-           "keys": '"intro" (рядок), "items" (масив рядків-новин), "outro" (рядок)',
+           "manner_note": host.get("note", ""),
+           "keys": '"intro" (рядок), "outro" (рядок), "teaser" (рядок), "items" (масив об\'єктів {"t": речення, "h": 0 або 1})',
            "closing_task": "", "extra": ""}
     if EXTRA_INSTRUCTIONS.strip():
         ctx["extra"] = ("\nДодаткові вказівки редактора (виконуй, якщо не суперечать правилам вище): "
@@ -444,9 +500,16 @@ def _ask(client, posts: list[str], ctx: dict, strict: bool, note: str = "") -> d
         raise last
     if isinstance(obj, list):  # на випадок, якщо модель повернула лише масив новин
         obj = {"items": obj}
-    items = [x.strip() for x in obj.get("items", []) if isinstance(x, str) and x.strip()]
-    return {"intro": str(obj.get("intro") or "").strip(), "items": items,
-            "outro": str(obj.get("outro") or "").strip()}
+    items, heavy = [], []
+    for e in obj.get("items", []):
+        if isinstance(e, dict) and isinstance(e.get("t"), str) and e["t"].strip():
+            items.append(e["t"].strip())
+            heavy.append(str(e.get("h", 0)).strip().lower() in ("1", "true", "так", "yes"))
+        elif isinstance(e, str) and e.strip():
+            items.append(e.strip())
+            heavy.append(False)
+    return {"intro": str(obj.get("intro") or "").strip(), "items": items, "heavy": heavy,
+            "outro": str(obj.get("outro") or "").strip(), "teaser": str(obj.get("teaser") or "").strip()}
 
 
 DIGITS_NOTE = ("\n\nУВАГА: у новинах були цифри. Запиши ВСІ числа словами, у правильному відмінку й роді, "
@@ -468,22 +531,37 @@ def _this_is(text: str, host: str) -> bool:
 
 
 def valid_intro(text: str, ctx: dict) -> bool:
-    """Спочатку «Служба новин… найкоротші новини», і лише потім ім'я ведучої."""
+    """Спочатку «Служба новин…», і лише потім ім'я ведучої; слова «найкоротші» немає."""
     low = text.lower()
     name, st = _first_name(ctx["host"]), STATION.lower()
     return (bool(text) and name in low and st in low and low.index(st) < low.index(name)
-            and "найкоротш" in low
+            and "найкоротш" not in low
             and not has_russian(text) and not NO_TIME_RE.search(text) and not NO_NAME_RE.search(text)
             and not _this_is(text, ctx["host"]))
 
 
 def valid_outro(text: str, ctx: dict) -> bool:
-    """Порядок: «Кекс ФМ… найкоротші новини завершено» -> ім'я ведучої -> побажання."""
+    """Порядок: «Кекс ФМ… новини завершено» -> ім'я ведучої -> побажання; слова «найкоротші» немає."""
     low = text.lower()
     name, wish = _first_name(ctx["host"]), ctx["wish"]
     return (bool(text) and "кекс фм" in low and name in low and wish in low
-            and low.index("кекс фм") < low.index(name) < low.index(wish)
+            and low.index("кекс фм") < low.index(name) < low.index(wish) and "найкоротш" not in low
             and not has_russian(text) and not NO_TIME_RE.search(text) and not NO_NAME_RE.search(text))
+
+
+def valid_teaser(text: str) -> bool:
+    low = text.lower()
+    return (25 <= len(text) <= 170 and low.startswith("головне") and not re.search(r"\d", text)
+            and not has_russian(text) and "найкоротш" not in low)
+
+
+def _teaser_from(items: list[str]) -> str | None:
+    """Запасний тизер: перша (найважливіша) новина випуску."""
+    if items:
+        t = "Головне зараз: " + items[0]
+        if len(t) <= 160 and not re.search(r"\d", t):
+            return t
+    return None
 
 
 # Донат у кінці випуску: вариативно, з адресою сайту (вимовляється як DONATE_SPOKEN)
@@ -503,22 +581,63 @@ def pick_donate(last_variant) -> tuple[str, int]:
     return DONATE_VARIANTS[v].format(addr=DONATE_SPOKEN), v
 
 
-def spoken(text: str) -> str:
-    """Текст для озвучки: назву станції пишемо з наголосами (велика голосна = наголос)."""
-    return re.sub(re.escape(STATION), STATION_SPOKEN, text, flags=re.I)
+# Одна фраза про безпеку на випуск — лише коли в новинах є тривога, обстріли чи важкі новини
+SAFETY_LINES = [
+    "Бережіть себе і дотримуйтесь правил безпеки.",
+    "Будь ласка, не ігноруйте сигнали тривоги й дбайте про безпеку.",
+    "Дбайте про безпеку: за сигналом тривоги прямуйте до укриття.",
+    "Бережіть себе та своїх близьких.",
+]
+SAFETY_RE = re.compile(r"тривог|обстріл|ракет|дрон|безпілот|вибух|атак|укритт|ППО", re.I)
+
+
+def needs_safety(items: list[str], heavy: list[bool]) -> bool:
+    return any(heavy) or any(SAFETY_RE.search(t) for t in items)
+
+
+def _pron_pairs() -> list[tuple[str, str]]:
+    """Словник вимови з панелі: рядки «слово = вимова»; довші слова застосовуємо першими."""
+    pairs = []
+    for line in PRON_DICT.splitlines():
+        a, sep, b = line.partition("=")
+        if sep and a.strip() and b.strip():
+            pairs.append((a.strip(), b.strip()))
+    return sorted(pairs, key=lambda p: -len(p[0]))
+
+
+def _replace_word(text: str, word: str, repl: str) -> str:
+    pat = re.compile(r"(?<![\w'’])" + re.escape(word) + r"(?![\w'’])", re.I)
+
+    def fix(m):
+        out = repl
+        if m.group(0).istitle() and out[:1].islower():  # «Київ» -> з великої; «ЗСУ» (усі великі) — як є
+            out = out[:1].upper() + out[1:]
+        return out
+    return pat.sub(fix, text)
+
+
+def spoken(text: str, host: dict | None = None) -> str:
+    """Текст для озвучки: назва станції й ім'я ведучої з наголосами (велика голосна = наголос) і словник вимови."""
+    text = re.sub(re.escape(STATION), STATION_SPOKEN, text, flags=re.I)
+    if host:
+        text = _replace_word(text, host["name"], host["spoken"])
+    for word, repl in _pron_pairs():
+        text = _replace_word(text, word, repl)
+    return text
 
 
 def summarize(posts: list[str], ctx: dict, wsum: dict | None = None):
-    """Повертає (привітання, новини, прощання, текст погоди з явним вступом або None)."""
+    """Повертає (привітання, новини, позначки «важка», прощання, текст погоди з вступом або None, тизер або None)."""
     client = _client()
     data = _ask(client, posts, ctx, strict=False)
-    own = [data["intro"], data["outro"]]
+    own = [data["intro"], data["outro"], data["teaser"]]
     strict = any(looks_russian(x) for x in data["items"]) or any(has_russian(x) for x in own if x)
     note = DIGITS_NOTE if any(re.search(r"\d", x) for x in data["items"]) else ""
     if strict or note:
         print("Повторюю запит суворіше:" + (" російські слова;" if strict else "") + (" цифри в новинах;" if note else ""))
         data = _ask(client, posts, ctx, strict=strict, note=note)
-    items = [x for x in data["items"] if not RU_LETTERS.search(x)]
+    pairs = [(t, h) for t, h in zip(data["items"], data["heavy"]) if not RU_LETTERS.search(t)]
+    items, heavy = [t for t, _ in pairs], [h for _, h in pairs]
     if any(re.search(r"\d", x) for x in items):
         print("Увага: у новинах лишилися цифри (модель не записала їх словами).")
     intro, outro = data["intro"], data["outro"]
@@ -528,20 +647,23 @@ def summarize(posts: list[str], ctx: dict, wsum: dict | None = None):
     if not valid_outro(outro, ctx):
         print("Прощання не пройшло перевірку, беру запасне")
         outro = random.choice(OUTRO_FALLBACKS).format(host=ctx["host"], Wish=_cap(ctx["wish"]))
+    teaser = None
+    if TEASER_ENABLED:
+        teaser = data["teaser"] if valid_teaser(data["teaser"]) else _teaser_from(items)
     wtext = None
     if wsum:  # текст погоди складає код: усі числа словами в правильних відмінках, без швидкості вітру
         wtext = weather.compose_text(wsum)
         if WEATHER_LEADS:  # погоду оголошуємо явно: «І про погоду в Києві.»
             wtext = f"{random.choice(WEATHER_LEADS)} {wtext}"
-    return intro, items, outro, wtext
+    return intro, items, heavy, outro, wtext, teaser
 
 
 def fit_bytes(texts: list[str], kinds: list[str], limit: int):
     """Привітання, оголошення, погоду і прощання лишаємо завжди; новини додаємо, поки є місце."""
-    used = sum(len(t.encode()) + 2 for t, k in zip(texts, kinds) if k != "news")
+    used = sum(len(t.encode()) + 2 for t, k in zip(texts, kinds) if k not in ("news", "news_heavy"))
     keep = []
     for t, k in zip(texts, kinds):
-        if k != "news":
+        if k not in ("news", "news_heavy"):
             keep.append(True)
             continue
         n = len(t.encode()) + 2
@@ -672,7 +794,7 @@ def gemini_tts_pcm(texts: list[str], kinds: list[str], voice: str, style: str, b
 
 
 async def make_audio(texts: list[str], kinds: list[str], host: dict, out_path: str, pack: str | None = None,
-                     budget_s: float | None = None):
+                     budget_s: float | None = None, weather_fx_kind: str | None = None):
     """texts/kinds: привітання, новини..., погода, телеграм, прощання. Повертає (секунди, озвучені фрази,
     їхні типи) або None, якщо якісної озвучки отримати не вдалося (тоді main повторить попередній випуск)."""
     try:
@@ -681,6 +803,8 @@ async def make_audio(texts: list[str], kinds: list[str], host: dict, out_path: s
         print(f"::warning::Якісної озвучки Gemini отримати не вдалося ({e}). Запасного голосу немає.")
         return None
     voice = radio.normalize(radio.decode_pcm16(pcm, 24000, host["speed"], host["pitch"]), VOICE_DB)
+    if VOICE_FX_ENABLED:  # ефірна обробка: де-эссер, компресор, присутність
+        voice = radio.normalize(radio.fm_voice(voice, VOICE_FX_AMOUNT), VOICE_DB)
     before = len(voice) / radio.SR
     voice = radio.compress_silences(voice)  # довгі «зависання» Gemini стискаємо до півтори секунди
     if before - len(voice) / radio.SR > 1:
@@ -712,10 +836,14 @@ async def make_audio(texts: list[str], kinds: list[str], host: dict, out_path: s
     print(f"Звук: джингли={'так' if opener is not None else 'ні'}, перебивок={len(stings)}, "
           f"перебивка погоди={'так' if wsting is not None else 'ні'}, "
           f"фон={'так' if bed is not None else 'ні'} (під голосом {BED_UNDER_DB} дБ, у паузах {BED_GAP_DB} дБ)")
+    wfx = radio.weather_fx(weather_fx_kind, 30.0) if (WEATHER_FX_ENABLED and weather_fx_kind and "weather" in used_kinds) else None
+    if wfx is not None:
+        print(f"Звуки погоди під блоком погоди: {weather_fx_kind} ({WEATHER_FX_DB} дБ)")
     track = radio.assemble(parts, used_kinds, opener, closer, stings, bed,
                            assets.get("bed_seamless", True), BED_UNDER_DB, BED_GAP_DB,
                            JINGLE_GAIN_DB, STING_GAIN_DB, gap_ms=PAUSE_PLAIN_MS, weather_sting=wsting,
-                           pre_ms=PAUSE_BEFORE_MS, post_ms=PAUSE_AFTER_MS)
+                           pre_ms=PAUSE_BEFORE_MS, post_ms=PAUSE_AFTER_MS,
+                           gap_heavy_ms=HEAVY_PAUSE_MS, weather_fx=wfx, weather_fx_db=WEATHER_FX_DB)
     radio.export_mp3(track, out_path, MP3_BITRATE)
     return len(track) / radio.SR, used, used_kinds
 
@@ -747,20 +875,28 @@ async def main() -> None:
         print("Нових матеріалів немає ні в основному, ні в резервному каналі: випуск пропущено (повторів не робимо).")
         return
     ctx = make_context(air, host, wsum)
-    intro, items, outro, wtext = summarize(posts, ctx, wsum)
+    intro, items, heavy, outro, wtext, teaser = summarize(posts, ctx, wsum)
     if not items:
         print("Gemini не повернув новин, пропускаю.")
         return
-    texts, kinds = [intro], ["intro"]
-    texts += items; kinds += ["news"] * len(items)
+    texts, kinds = [], []
+    if teaser:  # тизер звучить ПЕРЕД джинглом: заголовок поверх нарощування
+        texts.append(teaser); kinds.append("teaser")
+    texts.append(intro); kinds.append("intro")
+    for t, h in zip(items, heavy):  # важкі новини (загиблі, обстріли) — без «танцювальних» перебивок
+        texts.append(t); kinds.append("news_heavy" if h else "news")
+    if SAFETY_ENABLED and needs_safety(items, heavy):  # одна фраза про безпеку на випуск
+        texts.append(random.choice(SAFETY_LINES)); kinds.append("safety")
     if wtext:
         texts.append(wtext); kinds.append("weather")
     dn, dn_variant = pick_donate(last.get("donate")) if DONATE_ENABLED else (None, None)
     if dn:  # наприкінці випуску: вариативний заклик підтримати станцію (з адресою сайту), потім прощання
         texts.append(dn); kinds.append("donate")
     texts.append(outro); kinds.append("outro")
-    print(f"Ведуча: {host['name']} (попередній випуск вела: №{last.get('host', '—')}); пакет звуків: {pack}")
+    print(f"Ведуча: {host['name']} (попередній випуск вела: №{last.get('host', '—')}); манера: {host['manner']}; пакет звуків: {pack}")
+    print(f"Тизер: {teaser}")
     print(f"Привітання: {intro}")
+    print(f"Тяжких новин: {sum(heavy)} з {len(items)}")
     print(f"Погода: {wtext}")
     print(f"Донат (формула №{dn_variant}): {dn}")
     print(f"Прощання: {outro}")
@@ -779,13 +915,16 @@ async def main() -> None:
     budget = max(0.0, min(TTS_RETRY_MIN * 60, to_air - TTS_AIR_MARGIN_MIN * 60))
     print(f"Бюджет часу на озвучку Gemini: {budget / 60:.0f} хв (до ефіру {to_air / 60:.0f} хв)")
     out = "episode.mp3"
-    result = await make_audio([spoken(t) for t in texts], kinds, host, out, pack, budget)
+    fx_kind = weather.fx_kind(wsum) if wsum else None
+    spoken_texts = [spoken(t, host) for t in texts]  # для озвучки: с ударениями и вимовою
+    back = dict(zip(spoken_texts, texts))              # обратно к обычному тексту — для описания и подписи в Telegram
+    result = await make_audio(spoken_texts, kinds, host, out, pack, budget, fx_kind)
     gh_out = os.environ.get("GITHUB_OUTPUT")
 
-    def mark_published(fname: str):
+    def mark_published(fname: str, tg_post: bool = False):
         if gh_out:
             with open(gh_out, "a", encoding="utf-8") as f:
-                f.write(f"published=true\naudio_file={fname}\n")
+                f.write(f"published=true\naudio_file={fname}\ntg_post={'true' if tg_post else 'false'}\n")
 
     if result is None:  # якісної озвучки немає — краще повторити попередній випуск, ніж пустити поганий голос
         src = feed.latest_episode(site_dir)
@@ -799,12 +938,12 @@ async def main() -> None:
         fname = feed.publish(site_dir, os.path.join(site_dir, src["file"]), f"{title} (повтор)", base,
                              int(src.get("duration", 0)), now, KEEP_EPISODES, cfg,
                              meta={**(src.get("meta") or {}), "reused": True, "mode": "reuse"}, name_suffix="_r")
-        print(f"Опубліковано повтор попереднього випуску ({src['file']}).")
+        print(f"Опубліковано повтор попереднього випуску ({src['file']}); у Telegram повтор не дублюємо.")
         mark_published(fname)
         return
     dur, used, used_kinds = result
     # В описі — лише те, що справді прозвучало (раніше опис будувався з усіх новин, навіть якщо озвучка їх не вмістила)
-    voiced_news = [t for t, k in zip(used, used_kinds) if k == "news"]
+    voiced_news = [back.get(t, t) for t, k in zip(used, used_kinds) if k in ("news", "news_heavy")]
     if len(voiced_news) < len(items):
         print(f"::warning::Озвучено {len(voiced_news)} новин із {len(items)}: решта не вмістилась у запит і в опис не потрапила.")
     # Опис: новини, посилання; службові рядки (ведуча, джерела) — в самому кінці, з нового абзацу. Без погоди.
@@ -822,7 +961,18 @@ async def main() -> None:
     fname = feed.publish(site_dir, out, title, description, int(dur), now, KEEP_EPISODES, cfg,
                          meta={"host": host["id"], "posts": keys, "mode": mode, "pack": pack, "donate": dn_variant})
     print(f"Готово: {len(voiced_news)} новин ({mode}), {dur:.0f} с, файл {fname}")
-    mark_published(fname)
+    tg_ready = False
+    if TG_POST_ENABLED and TG_POST_CHANNEL:  # готовимо публікацію в Telegram-каналі (її робить окремий крок workflow)
+        lines = [f"🎙 {title}", ""]
+        for l in voiced_news:
+            if len("\n".join(lines + [f"• {l}"])) > 900:
+                break
+            lines.append(f"• {l}")
+        with open("tg_post.json", "w", encoding="utf-8") as f:
+            json.dump({"channel": TG_POST_CHANNEL, "file": os.path.abspath(out), "caption": "\n".join(lines),
+                       "title": title, "duration": int(dur), "performer": f"Кекс ФМ, {host['name']}"}, f, ensure_ascii=False)
+        tg_ready = True
+    mark_published(fname, tg_ready)
 
 
 if __name__ == "__main__":
