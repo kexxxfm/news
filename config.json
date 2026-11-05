@@ -15,8 +15,8 @@
  "host1_style": "",
  "host2_name": "Лєра",
  "host2_voice": "Kore",
- "host2_speed": 1.02,
- "host2_pitch": -0.5,
+ "host2_speed": 1.1,
+ "host2_pitch": 1,
  "host2_style": "",
  "tts_models": "gemini-2.5-flash-preview-tts,gemini-2.5-pro-preview-tts",
  "tts_retry_min": 60,
@@ -63,5 +63,8 @@
  "tg_post_channel": "@kexxxfm",
  "host1_spoken": "АнгелІна",
  "host1_persona": "a 19-year-old young woman with a feminine, clear, bright, HIGH-pitched voice in a high female register, mature, confident and NOT childish, not a girl's voice",
- "host1_manner": "brisk"
+ "host1_manner": "brisk",
+ "host2_spoken": "ЛЄра",
+ "host2_persona": "a young woman with a LOW, deep, smooth female voice with a warm chest resonance, confident and NOT childish",
+ "host2_manner": "weighty"
 }
