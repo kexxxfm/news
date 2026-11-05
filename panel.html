@@ -107,6 +107,7 @@ const F=[['Источники и новости',[['channels','Основной 
 ['pack_evening','Вечер (17:00–21:59)','sel','deep_house',PK],['pack_night','Ночь (22:00–4:59)','sel','night_chill',PK]]],
 ['Музыка и звуки',[['bed_enabled','Фоновая музыка под выпуском','bool',true],['bed_under_db','Фон под голосом (дБ относительно голоса; меньше = тише)','rng',-20,-40,-6,1,' дБ'],
 ['bed_gap_db','Фон в паузах (дБ)','rng',-12,-30,-3,1,' дБ'],['jingles_enabled','Джинглы и перебивки','bool',true],
+['callsign_enabled','Короткий звук-позывной в самом начале выпуска (свой для каждого звукового пакета)','bool',true],
 ['teaser_enabled','Тизер: сразу после позывного (джингл пакета по времени суток) — «Головне зараз: …», затем приветствие','bool',true],
 ['heavy_pause_ms','Пауза вокруг тяжёлой новости (погибшие, обстрелы), мс: без перебивок','num',1500,500,4000],
 ['voice_fx_enabled','Эфирная обработка голоса (компрессор, де-эссер, присутствие)','bool',true],
@@ -150,7 +151,7 @@ async function saveCfg(){const u={};
  F.forEach(([g,fs])=>fs.forEach(([k,l,t])=>{const e=$('#f_'+k);u[k]=t=='bool'?e.checked:(t=='num'||t=='rng')?Number(e.value):e.value}));
  try{await commit(u);toast('Сохранено ✓')}catch(e){toast('Не сохранилось: '+e.message,1)}}
 
-const K=[['open','Начало выпуска (джингл)'],['close','Конец выпуска (джингл)'],['sting','Перебивки между новостями'],['weather','Особая перебивка перед погодой'],['bed','Фоновая музыка']];
+const K=[['callsign','Позывной (короткий фирменный звук в самом начале)'],['open','Начало выпуска (джингл)'],['close','Конец выпуска (джингл)'],['sting','Перебивки между новостями'],['weather','Особая перебивка перед погодой'],['bed','Фоновая музыка']];
 async function loadSounds(){const L=(await api(`/contents/assets?ref=${S.branch}`,{soft:1}))||[];
  $('#sounds').innerHTML=K.map(([k,t])=>{const fs=L.filter(f=>f.name.startsWith(k));
  return`<div class="card"><h3>${t}</h3>`+(fs.length?fs.map(f=>`<div class="row"><span>${esc(f.name)} <small>${(f.size/1024).toFixed(0)} КБ</small></span><span><button onclick="play('${f.path}')">▶</button> <button class="del" onclick="del('${f.path}','${f.sha}')">✕</button></span></div>`).join(''):'<p class="mut">Ничего не загружено — используется встроенный синтезированный звук.</p>')+
