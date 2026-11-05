@@ -604,11 +604,11 @@ def _db(v):
 
 
 def load_assets(asset_dir: str = "assets", pack: str | None = None) -> dict:
-    """Звуки для випуску. Пріоритет: власні файли в assets/ (open*, close*, sting*, weather*, bed*),
+    """Звуки для випуску. Пріоритет: власні файли в assets/ (callsign*, open*, close*, sting*, weather*, bed*),
     далі звуковий пакет `pack` (див. soundpacks.py), далі вбудований синтез.
     Повертає також bed_seamless: True, якщо фон — наша безшовна петля."""
     synth, out, pk = None, {}, None
-    for kind, target in (("open", -21), ("close", -21), ("sting", -23), ("weather", -22), ("bed", -19)):
+    for kind, target in (("callsign", -19), ("open", -21), ("close", -21), ("sting", -23), ("weather", -22), ("bed", -19)):
         files = []
         for ext in ("mp3", "wav", "ogg", "m4a"):
             files += glob.glob(os.path.join(asset_dir, f"{kind}*.{ext}"))
@@ -628,10 +628,10 @@ def load_assets(asset_dir: str = "assets", pack: str | None = None) -> dict:
                 print(f"Звуковий пакет «{pack}» не зібрався ({repr(e)[:120]}), беру вбудований")
                 pk = False
         if pk:
-            out[kind] = [normalize(x, target) for x in pk[kind]]
+            out[kind] = [normalize(x, target) for x in pk.get(kind, [])]
         else:
             synth = synth or synth_assets()
-            out[kind] = synth[kind]
+            out[kind] = synth.get(kind, [])
         if kind == "bed":
             out["bed_seamless"] = True
     return out
@@ -775,23 +775,34 @@ def assemble(parts, kinds=None, opener=None, closer=None, stingers=None, bed=Non
              bed_seamless=True, bed_under_db=-20.0, bed_gap_db=-12.0,
              jingle_gain_db=0.0, sting_gain_db=0.0, gap_ms: int = 700, weather_sting=None,
              pre_ms: int = 450, post_ms: int = 250, gap_heavy_ms: int = 1500,
-             weather_fx=None, weather_fx_db: float = -22.0) -> np.ndarray:
+             weather_fx=None, weather_fx_db: float = -22.0, callsign=None) -> np.ndarray:
     """Зводить випуск у СТЕРЕО (n, 2). Голос — моно, по центру; музика, джингли й фон — стерео.
     kinds: teaser (після позивного), intro, news, news_heavy (важка новина: без перебивки, довша пауза), safety, weather, donate, outro."""
     ms = lambda v: int(v * SR / 1000)
     parts = list(parts)
     kinds = list(kinds or ["news"] * len(parts))
-    opener, closer, weather_sting, bed, weather_fx = map(_as_stereo, (opener, closer, weather_sting, bed, weather_fx))
+    callsign, opener, closer, weather_sting, bed, weather_fx = map(_as_stereo, (callsign, opener, closer, weather_sting, bed, weather_fx))
     stingers = [_as_stereo(x) for x in (stingers or [])]
     track = np.zeros((0, 2), np.float32)
     vt = np.zeros(0, np.float32)  # окремо лише голос — для притискання фону
     cursor = 0
-    if opener is not None:  # ВИПУСК ПОЧИНАЄТЬСЯ З ПОЗИВНОГО — джингла звукового пакета за часом доби; лише потім слова
+    o_start = 0
+    if callsign is not None:  # ВИПУСК ПОЧИНАЄТЬСЯ З ПОЗИВНОГО — короткого фірмового звуку пакета за часом доби
+        cs = callsign * _db(jingle_gain_db)
+        if opener is None:  # без джингла хвіст позивного «сідає» під перші слова
+            ovc = min(ms(1500), len(cs) // 2)
+            cs[-ovc:] *= np.linspace(1.0, 0.18, ovc)[:, None]
+            cursor = len(cs) - ovc
+        else:  # джингл входить, поки ще дзвенить хвіст позивного
+            o_start = max(0, len(cs) - ms(500))
+            cursor = o_start
+        track = _mix(track, cs, 0)
+    if opener is not None:  # далі джингл пакета; лише потім слова (тизер або привітання)
         ov = min(ms(1800), len(opener) // 2)
         o = opener * _db(jingle_gain_db)
-        o[-ov:] *= np.linspace(1.0, 0.18, ov)[:, None]  # музика «сідає» під перші слова (тизер або привітання)
-        track = _mix(track, o, 0)
-        cursor = len(o) - ov
+        o[-ov:] *= np.linspace(1.0, 0.18, ov)[:, None]  # музика «сідає» під перші слова
+        track = _mix(track, o, o_start)
+        cursor = o_start + len(o) - ov
     voice_start = cursor
     last = None
     weather_spans = []  # де звучить блок погоди: основну підкладку там вимикаємо
