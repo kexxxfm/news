@@ -102,6 +102,7 @@ SQUALL_MS = opt("squall_ms", "SQUALL_MS", float(weather.SQUALL_MS))  # пори�
 DONATE_URL = opt("donate_url", "DONATE_URL", "https://keksfm.kiev.ua")
 DONATE_ENABLED = opt("donate_enabled", "DONATE_ENABLED", True)  # в кінці випуску ведуча вариативно говорить про донат
 DONATE_SPOKEN = opt("donate_spoken", "DONATE_SPOKEN", "кекс еф ем крапка кієв крапка ю а")  # як вимовляється keksfm.kiev.ua
+CALLSIGN_ENABLED = opt("callsign_enabled", "CALLSIGN_ENABLED", True)  # короткий фірмовий звук-позивний на самому початку
 TEASER_ENABLED = opt("teaser_enabled", "TEASER_ENABLED", True)    # тизер «Головне зараз…» перед джинглом
 SAFETY_ENABLED = opt("safety_enabled", "SAFETY_ENABLED", True)    # одна фраза про безпеку на випуск за потреби
 WEATHER_FX_ENABLED = opt("weather_fx_enabled", "WEATHER_FX_ENABLED", True)  # звуки дощу/вітру/грози під погодою
@@ -827,13 +828,14 @@ async def make_audio(texts: list[str], kinds: list[str], host: dict, out_path: s
         print(f"Звуковий пакет: {pack or 'вбудований'}")
     except Exception as e:
         print("Не вдалося підготувати звуки, випуск буде без них:", repr(e)[:200])
-        assets = {"open": [], "close": [], "sting": [], "bed": []}
+        assets = {"callsign": [], "open": [], "close": [], "sting": [], "bed": []}
+    callsign = random.choice(assets["callsign"]) if JINGLES_ENABLED and CALLSIGN_ENABLED and assets.get("callsign") else None
     opener = random.choice(assets["open"]) if JINGLES_ENABLED and assets["open"] else None
     closer = random.choice(assets["close"]) if JINGLES_ENABLED and assets["close"] else None
     stings = assets["sting"] if JINGLES_ENABLED else []
     bed = assets["bed"][0] if BED_ENABLED and assets.get("bed") else None
     wsting = random.choice(assets["weather"]) if JINGLES_ENABLED and assets.get("weather") else None
-    print(f"Звук: джингли={'так' if opener is not None else 'ні'}, перебивок={len(stings)}, "
+    print(f"Звук: позивний={'так' if callsign is not None else 'ні'}, джингли={'так' if opener is not None else 'ні'}, перебивок={len(stings)}, "
           f"перебивка погоди={'так' if wsting is not None else 'ні'}, "
           f"фон={'так' if bed is not None else 'ні'} (під голосом {BED_UNDER_DB} дБ, у паузах {BED_GAP_DB} дБ)")
     wfx = radio.weather_fx(weather_fx_kind, 30.0) if (WEATHER_FX_ENABLED and weather_fx_kind and "weather" in used_kinds) else None
@@ -843,7 +845,8 @@ async def make_audio(texts: list[str], kinds: list[str], host: dict, out_path: s
                            assets.get("bed_seamless", True), BED_UNDER_DB, BED_GAP_DB,
                            JINGLE_GAIN_DB, STING_GAIN_DB, gap_ms=PAUSE_PLAIN_MS, weather_sting=wsting,
                            pre_ms=PAUSE_BEFORE_MS, post_ms=PAUSE_AFTER_MS,
-                           gap_heavy_ms=HEAVY_PAUSE_MS, weather_fx=wfx, weather_fx_db=WEATHER_FX_DB)
+                           gap_heavy_ms=HEAVY_PAUSE_MS, weather_fx=wfx, weather_fx_db=WEATHER_FX_DB,
+                           callsign=callsign)
     radio.export_mp3(track, out_path, MP3_BITRATE)
     return len(track) / radio.SR, used, used_kinds
 
