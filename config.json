@@ -10,7 +10,7 @@
  "station_spoken": "Служба новин кекс рАдіо-кОмпані",
  "host1_name": "Ангеліна",
  "host1_voice": "Zephyr",
- "host1_speed": 1.02,
+ "host1_speed": 1.2,
  "host1_pitch": 1,
  "host1_style": "",
  "host2_name": "Лєра",
@@ -60,5 +60,8 @@
  "weather_fx_db": -22,
  "safety_enabled": true,
  "tg_post_enabled": true,
- "tg_post_channel": "@kexxxfm"
+ "tg_post_channel": "@kexxxfm",
+ "host1_spoken": "АнгелІна",
+ "host1_persona": "a 19-year-old young woman with a feminine, clear, bright, HIGH-pitched voice in a high female register, mature, confident and NOT childish, not a girl's voice",
+ "host1_manner": "brisk"
 }
