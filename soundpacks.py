@@ -431,6 +431,70 @@ REGISTRY = {
 PACK_NAMES = list(REGISTRY)
 
 
+# ------------------------------------------------------------------ ПОЗИВНИЙ (короткий фірмовий звук ≈ 3,5 с)
+# Структура: нарощування «пролітає» зліва направо -> удар -> мотив із 5–6 нот, що стрибають між каналами -> відскоки ехо.
+CALLSIGNS = {
+    "neutral_house": dict(root=57, chord=(0, 3, 7, 10), motif=(0, 3, 7, 12, 15), timbre="pluck", hit="stab", kick=1.0, oct=1, gap=0.15),
+    "deep_house": dict(root=62, chord=(0, 3, 7, 10, 14), motif=(0, 7, 10, 14, 19), timbre="bell", hit="pad", kick=0.6, oct=1, gap=0.22),
+    "tech_house": dict(root=53, chord=(0, 3, 7), motif=(0, 5, 3, 7, 12), timbre="blip", hit="stab", kick=1.0, oct=1, gap=0.13),
+    "acid_house": dict(root=45, chord=(0, 3, 7), motif=(0, 12, 7, 15, 10), timbre="acid", hit="acid", kick=1.0, oct=1, gap=0.14),
+    "classic_trance": dict(root=57, chord=(0, 3, 7), motif=(0, 3, 7, 12, 15, 19), timbre="super", hit="super", kick=1.0, oct=1, gap=0.12),
+    "uplifting_trance": dict(root=54, chord=(0, 3, 7), motif=(0, 4, 7, 11, 14, 16), timbre="bell", hit="super", kick=0.9, oct=2, gap=0.13),
+    "night_chill": dict(root=50, chord=(0, 4, 7, 11), motif=(0, 4, 7, 11, 16), timbre="bell", hit="pad", kick=0.35, oct=2, gap=0.3),
+}
+
+
+def _cs_note(sp, f):
+    t = sp["timbre"]
+    if t == "pluck":
+        return R.pluck(f, 0.22, 0.5)
+    if t == "bell":
+        return R.bell(f, 1.2, 0.38)
+    if t == "blip":
+        return G.blip(f, 0.14, 0.5)
+    if t == "acid":
+        return G.acid(f, 0.22, cut_hi=3400, q=10, decay=9, vol=0.5)
+    return G.supersaw(f, 0.24, 0.24, voices=5, decay=6, lp=6500)
+
+
+def callsign(name, rng):
+    """Короткий фірмовий звук пакета: звук, що пролітає з боку в бік, удар, мотив із нотами, які стрибають
+    між лівим і правим каналом, і відскоки ехо. Бас лишається по центру."""
+    sp = CALLSIGNS[name]
+    root, base = sp["root"], sp["root"] + 12 * sp["oct"]
+    # ноти мотиву — моно, щоб панорама (лише ліво/лише право) діяла і на «широкі» тембри на кшталт суперсо
+    note = lambda f: (lambda x: x.mean(axis=1) if x.ndim == 2 else x)(_cs_note(sp, f))
+    rise = 0.95
+    buf = st((rise + 3.1) * SR)
+    ris = R.riser(rise, rng, 0.5)  # нарощування, що «пролітає» через усе поле
+    ris = G.balance(ris, np.linspace(-1.0, 1.0, len(ris)) * 0.95)
+    buf[: len(ris)] += ris
+    for i, n in enumerate((0, 3, 7, 12)):  # швидкі підскоки вгору перед ударом: ліво, право, ліво, право
+        ADD(buf, note(mtof(base + n - 12)), rise - 0.5 + i * 0.12, 0.8, pan=(-0.95, 0.95)[i % 2])
+    ADD(buf, R.kick(), rise, sp["kick"])  # удар
+    ADD(buf, R.crash(1.6, rng, 0.35 + 0.15 * sp["kick"]), rise)
+    h = sp["hit"]
+    freqs = [mtof(base + n) for n in sp["chord"]]
+    if h == "stab":
+        ADD(buf, R.stab(freqs, 0.55, 0.5), rise)
+    elif h == "pad":
+        ADD(buf, R.pad([mtof(root + n) for n in sp["chord"]], 2.0, 0.32), rise - 0.05)
+    elif h == "acid":
+        ADD(buf, G.acid(mtof(root - 12), 0.9, cut_lo=200, cut_hi=4200, q=12, decay=3.2, accent=True, vol=0.5), rise, 1.0, pan=-0.5)
+    else:
+        for f in freqs:
+            ADD(buf, G.supersaw(f, 1.3, 0.2, decay=2.2), rise)
+    for i, n in enumerate(sp["motif"]):  # мотив: кожна нота різко в «своєму» каналі
+        ADD(buf, note(mtof(base + n)), rise + 0.16 + i * sp["gap"] * 2, 1.0, pan=0.95 * (-1) ** i)
+    low, high = G.split_low(buf)  # відскоки ехо між каналами й широка база; бас — по центру
+    high = R._widen(high, 2.4)
+    ric = G.ricochet(high, taps=6, first=0.09, spacing=0.12, decay=0.62, start_left=False)
+    out = np.zeros_like(ric)
+    out[: len(buf)] += low + high
+    out = G.mono_bass(out + ric * 0.5)
+    return R.trim_silence(R.normalize(out.astype(np.float32), -17, 0.89), -55, 140)
+
+
 _TARGETS = {"intro": -17, "outro": -17, "st": -19, "weather": -20, "bed": -20}
 
 
@@ -454,5 +518,6 @@ def build_pack(name: str) -> dict:
     """Збирає пакет за назвою (детерміновано, ~1-4 с) з «вау»-обробкою. Ключі — як у radio.load_assets."""
     fn, seed = REGISTRY[name]
     a = wow_pack(fn(np.random.default_rng(seed)))
-    return {"open": [a["intro"]], "close": [a["outro"]], "sting": [a["st1"], a["st2"], a["st3"]],
+    return {"callsign": [callsign(name, np.random.default_rng(seed + 50))],
+            "open": [a["intro"]], "close": [a["outro"]], "sting": [a["st1"], a["st2"], a["st3"]],
             "weather": [a["weather"]], "bed": [a["bed"]]}
