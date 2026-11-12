@@ -43,7 +43,7 @@ details summary{cursor:pointer;margin-top:8px}pre{margin:6px 0 0;font-size:12px}
 <div class="card"><h3>Ключ Gemini API для прослушивания</h3>
 <p class="mut">Образцы озвучиваются прямо из этой страницы: запрос уходит из вашего браузера в Google. Ключ хранится только в этом браузере и отправляется только на generativelanguage.googleapis.com. Каждое прослушивание — один запрос к бесплатному лимиту озвучки (он небольшой).</p>
 <label>Ключ Gemini API</label><input id="gkey" type="password" autocomplete="off" placeholder="AIza…">
-<label>Модель озвучки</label><input id="gmodel" value="gemini-2.5-flash-preview-tts">
+<label>Модель озвучки</label><input id="gmodel" value="gemini-3.8-flash-tts"> <p class="mut">Google отключает модели озвучки 2.5 (gemini-2.5-flash-preview-tts и gemini-2.5-pro-preview-tts) 17 ноября 2026; замена — gemini-3.8-flash-tts или gemini-3.8-flash-lite-tts. В документации Google украинский в списке языков этих моделей не указан, поэтому качество проверьте на слух именно здесь.</p>
 <p><button onclick="saveGem()">Сохранить ключ</button></p></div>
 <div id="chars"></div>
 <h2>Каталог голосов Gemini (30)</h2>
@@ -100,8 +100,9 @@ const F=[['Источники и новости',[['channels','Основной 
 ['station_spoken','Как название произносится (большая гласная = ударение)','text','Служба новин кекс рАдіо-кОмпані'],
 ['pron_dict','Словарь произношения: по строке «слово = как произнести» (большая гласная = ударение; проверяйте на слух)','area','ЗСУ = зе ес у\nППО = пе пе о\nБпЛА = бе пе ел а\nКиїв = КИїв\nХарків = ХАрків\nДніпро = ДніпрО\nОдеса = ОдЕса\nЗапоріжжя = ЗапорІжжя\nМиколаїв = МиколаЇв\nХерсон = ХерсОн\nЧернігів = ЧернІгів\nПолтава = ПолтАва\nСуми = СУми\nРівне = РІвне\nЖитомир = ЖитОмир\nВінниця = ВІнниця\nЧеркаси = ЧеркАси']]],
 ['Озвучка Gemini (запасного голоса нет)',[
-['tts_models','Модели озвучки по очереди (через запятую, лучшие первыми)','text','gemini-2.5-flash-preview-tts,gemini-2.5-pro-preview-tts'],
+['tts_models','Модели озвучки по очереди (через запятую; модели 3.8 бот добавляет в конец сам)','text','gemini-2.5-flash-preview-tts,gemini-2.5-pro-preview-tts,gemini-3.8-flash-tts,gemini-3.8-flash-lite-tts'],
 ['tts_retry_min','Сколько минут настойчиво стучаться в Gemini (потом повторяется прошлый выпуск)','num',40,5,120],
+['reuse_max_hours','Повторять прошлый выпуск при сбое озвучки, только если он не старше (часов); иначе запуск красный и ничего не публикуется','num',12,1,72],
 ['tts_max_attempts','Максимум попыток за выпуск (бережёт квоту)','num',20,3,40]]],
 ['Звуковые пакеты по времени суток (по времени эфира)',[['pack_morning','Утро (5:00–11:59)','sel','tech_house',PK],['pack_day','День (12:00–16:59)','sel','neutral_house',PK],
 ['pack_evening','Вечер (17:00–21:59)','sel','deep_house',PK],['pack_night','Ночь (22:00–4:59)','sel','night_chill',PK]]],
@@ -193,7 +194,7 @@ const CH={1:{name:'Ангеліна',spoken:'АнгелІна',voice:'Zephyr',sp
 const SAMPLE='Служба новин кекс рАдіо-кОмпані. З вами знову {spoken}. Уночі росіяни атакували КИїв ударними безпілотниками: збито двадцять дев\'ять із тридцяти двох, є двоє загиблих і п\'ятнадцятеро поранених.';
 const ensureCfg=async()=>{if(CFG===null)await loadCfg()};
 const GEMS=()=>{try{return JSON.parse(localStorage.getItem('kex_gem')||'{}')}catch(e){return{}}};
-function saveGem(){localStorage.setItem('kex_gem',JSON.stringify({key:$('#gkey').value.trim(),model:$('#gmodel').value.trim()||'gemini-2.5-flash-preview-tts'}));toast('Ключ сохранён в этом браузере ✓')}
+function saveGem(){localStorage.setItem('kex_gem',JSON.stringify({key:$('#gkey').value.trim(),model:$('#gmodel').value.trim()||'gemini-3.8-flash-tts'}));toast('Ключ сохранён в этом браузере ✓')}
 
 /* --- звук: PCM -> Float32, смена высоты и скорости, WAV и MP3 --- */
 function pcmToF32(b64){const bin=atob(b64),n=bin.length>>1,o=new Float32Array(n);for(let i=0;i<n;i++){let v=bin.charCodeAt(2*i)|(bin.charCodeAt(2*i+1)<<8);if(v&0x8000)v-=0x10000;o[i]=v/32768}return o}
@@ -218,12 +219,17 @@ async function mp3Blob(f32,sr=44100,kbps=128){await loadLame();const enc=new lam
  for(let i=0;i<d.length;i+=1152){const c=enc.encodeBuffer(d.subarray(i,i+1152));if(c.length)out.push(new Int8Array(c))}const e=enc.flush();if(e.length)out.push(new Int8Array(e));return new Blob(out,{type:'audio/mpeg'})}
 
 /* --- озвучка Gemini прямо из браузера (ключ вводите вы, он остаётся в этом браузере) --- */
+function audioFromSteps(j){const st=j.steps||[];for(let i=st.length-1;i>=0;i--){const s=st[i];if(s.type==='model_output'&&s.content)for(const c of s.content)if(c.type==='audio'&&c.data)return c.data}return null}
 async function gemSpeak(voice,style,text,tries=3){const g=GEMS();if(!g.key)throw new Error('Введите ключ Gemini API и сохраните его');
- const body={contents:[{parts:[{text:style+'\n\n'+text}]}],generationConfig:{responseModalities:['AUDIO'],speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:voice}}}}};
- let last;for(let t=1;t<=tries;t++){try{const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${g.model||'gemini-2.5-flash-preview-tts'}:generateContent`,{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':g.key},body:JSON.stringify(body)});
-  const j=await r.json().catch(()=>({}));if(!r.ok){const m=(j.error&&j.error.message)||('HTTP '+r.status);if(r.status==503||r.status==500){last=new Error(m);await new Promise(z=>setTimeout(z,3000*t));continue}throw new Error(r.status==429?'Лимит запросов Gemini (429): подождите минуту или попробуйте завтра. '+m:m)}
-  const d=j.candidates&&j.candidates[0]&&j.candidates[0].content&&j.candidates[0].content.parts&&j.candidates[0].content.parts[0]&&j.candidates[0].content.parts[0].inlineData;if(!d||!d.data)throw new Error('Gemini не вернул звук');return pcmToF32(d.data)}
-  catch(e){if(t==tries||/429|Лимит|ключ|API key/i.test(e.message))throw e;last=e}}throw last}
+ const model=g.model||'gemini-3.8-flash-tts',n38=/^gemini-3\.8/.test(model),base='https://generativelanguage.googleapis.com/v1beta/';
+ const url=n38?base+'interactions':base+`models/${model}:generateContent`;
+ const body=n38?{model,input:[{type:'user_input',content:[{type:'text',text,annotations:[{type:'speech_metadata',style}]}]}],response_format:{type:'audio',mime_type:'audio/l16',sample_rate:24000},generation_config:{speech_config:[{voice}]}}
+  :{contents:[{parts:[{text:style+'\n\n'+text}]}],generationConfig:{responseModalities:['AUDIO'],speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:voice}}}}};
+ let last;for(let t=1;t<=tries;t++){try{const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':g.key},body:JSON.stringify(body)});
+  const j=await r.json().catch(()=>({}));if(!r.ok){const m=(j.error&&j.error.message)||('HTTP '+r.status);if(r.status==503||r.status==500){last=new Error(m);await new Promise(z=>setTimeout(z,3000*t));continue}throw new Error(r.status==429?'Лимит запросов Gemini (429): подождите минуту или попробуйте завтра. '+m:(r.status==400||r.status==404)?'Модель отклонила запрос ('+r.status+'): '+m+'. Попробуйте модель gemini-3.8-flash-tts (поле «Модель озвучки»).':m)}
+  let d;if(n38){d=audioFromSteps(j)}else{const x=j.candidates&&j.candidates[0]&&j.candidates[0].content&&j.candidates[0].content.parts&&j.candidates[0].content.parts[0]&&j.candidates[0].content.parts[0].inlineData;d=x&&x.data}
+  if(!d)throw new Error('Gemini не вернул звук');return pcmToF32(d)}
+  catch(e){if(t==tries||/429|Лимит|ключ|API key|отклонила/i.test(e.message))throw e;last=e}}throw last}
 async function speakRender(voice,style,text,pitch,speed){return renderVoice(await gemSpeak(voice,style,text),pitch,speed)}
 function playF32(audio,f32){if(audio._u)URL.revokeObjectURL(audio._u);audio._u=URL.createObjectURL(wavBlob(f32));audio.src=audio._u;audio.play().catch(()=>{})}
 
@@ -255,7 +261,7 @@ async function saveChar(i){const c=cv(i),u={};u['host'+i+'_name']=c.name;u['host
  try{await commit(u);toast('Персонаж №'+i+' сохранён ✓ (вступит в силу со следующего выпуска)')}catch(e){toast('Не сохранилось: '+e.message,1)}}
 function renderCatalog(){const f=$('#catfilter').value;$('#catalog').innerHTML=VOICES.filter(v=>f=='all'||v[1]==f).map(v=>`<div class="row"><span><b>${v[0]}</b> <small>${v[1]=='Ж'?'жен.':'муж.'}, ${v[2]}</small></span><span><button onclick="listen(+$('#catchar').value,'${v[0]}')">▶</button> <button onclick="pick(1,'${v[0]}')">→ №1</button> <button onclick="pick(2,'${v[0]}')">→ №2</button></span></div>`).join('')}
 function pick(i,v){$('#c'+i+'_voice').value=v;showPrompt(i);toast(`Голос ${v} выбран для ведущей №${i} (не забудьте «Сохранить персонажа»)`)}
-async function renderChars(){await ensureCfg();const g=GEMS();$('#gkey').value=g.key||'';$('#gmodel').value=g.model||'gemini-2.5-flash-preview-tts';
+async function renderChars(){await ensureCfg();const g=GEMS();$('#gkey').value=g.key||'';$('#gmodel').value=g.model||'gemini-3.8-flash-tts';
  $('#chars').innerHTML=charCard(1)+charCard(2);[1,2].forEach(i=>{['persona','manner','custom'].forEach(k=>$('#c'+i+'_'+k).addEventListener('input',()=>showPrompt(i)));showPrompt(i)});renderCatalog()}
 
 /* --- вкладка «Джинглы» --- */
