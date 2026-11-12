@@ -98,12 +98,14 @@ def covered_keys(site_dir: str, last_n: int = 12) -> set:
         return set()
 
 
-def latest_episode(site_dir: str) -> dict | None:
-    """Останній опублікований випуск (запис із episodes.json) або None."""
+def latest_episode(site_dir: str, real_only: bool = False) -> dict | None:
+    """Останній опублікований випуск (запис із episodes.json) або None. real_only — без повторів (позначка reused)."""
     try:
         with open(os.path.join(site_dir, "episodes.json"), encoding="utf-8") as fh:
             eps = json.load(fh)
         eps = [e for e in eps if os.path.exists(os.path.join(site_dir, e["file"]))]
+        if real_only:
+            eps = [e for e in eps if not (e.get("meta") or {}).get("reused")]
         eps.sort(key=lambda e: e["pub"], reverse=True)
         return eps[0] if eps else None
     except (OSError, ValueError, KeyError):
