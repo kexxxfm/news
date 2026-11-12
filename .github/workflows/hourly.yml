@@ -3,7 +3,7 @@ name: news-every-2h
 
 on:
   schedule:
-    - cron: "5 * * * *"   # запуск щогодини (UTC); справжня робота лише перед годиною ефіру, див. check
+    - cron: "5,20,35 * * * *"   # GitHub запускає розклад «за можливості» й часто пропускає запуски, тому тригерів три на годину; зайві відсікає check
   workflow_dispatch:       # кнопка ручного запуску (публікує одразу, без очікування)
     inputs:
       post_to_telegram:
@@ -30,15 +30,41 @@ jobs:
       go: ${{ steps.slot.outputs.go }}
     steps:
       - id: slot
+        env:
+          SITE_BASE_URL: ${{ vars.SITE_BASE_URL }}
+          EVENT: ${{ github.event_name }}
         run: |
           H=$((10#$(TZ=Europe/Kyiv date +%H)))
           NEXT=$(( (H + 1) % 24 ))
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ $(( NEXT % AIR_EVERY )) -eq "$AIR_OFFSET" ]; then
-            echo "go=true" >> "$GITHUB_OUTPUT"
+          # вік останнього опублікованого випуску (хв) беремо з публічної стрічки; не вдалося — вважаємо «давно»
+          if [ -z "${AGE_OVERRIDE:-}" ]; then
+            cat > /tmp/age.py <<'PY'
+          import json, os, urllib.request
+          from datetime import datetime, timezone
+          try:
+              eps = json.load(urllib.request.urlopen(os.environ["SITE_BASE_URL"].rstrip("/") + "/episodes.json", timeout=20))
+              last = max(datetime.fromisoformat(e["pub"]) for e in eps)
+              print(int((datetime.now(timezone.utc) - last).total_seconds() // 60))
+          except Exception:
+              print(99999)
+          PY
+            AGE=$(python3 /tmp/age.py)
           else
-            echo "go=false" >> "$GITHUB_OUTPUT"
+            AGE="$AGE_OVERRIDE"
           fi
-          echo "Київ зараз ${H} год, найближчий ефір о ${NEXT}:00"
+          MIN_AGE=$(( AIR_EVERY * 60 - 50 ))   # свіжіший випуск за цей вік означає «цей слот уже готовий»
+          CATCHUP=$(( AIR_EVERY * 60 + 40 ))   # старший за цей вік означає «слот пропущено» (GitHub не запустив розклад)
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            GO=true; WHY="ручний запуск"
+          elif [ $(( NEXT % AIR_EVERY )) -eq "$AIR_OFFSET" ] && [ "$AGE" -ge "$MIN_AGE" ]; then
+            GO=true; WHY="час випуску, попередній був ${AGE} хв тому"
+          elif [ "$AGE" -ge "$CATCHUP" ]; then
+            GO=true; WHY="наздоганяємо пропущений слот, попередній був ${AGE} хв тому"
+          else
+            GO=false; WHY="не час випуску або випуск для цього слота вже готовий"
+          fi
+          echo "go=$GO" >> "$GITHUB_OUTPUT"
+          echo "Київ зараз ${H} год, найближчий ефір о ${NEXT}:00, вік останнього випуску ${AGE} хв -> go=$GO (${WHY})"
 
   build:
     needs: check
