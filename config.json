@@ -15,8 +15,8 @@
  "host1_style": "",
  "host2_name": "Лєра",
  "host2_voice": "Sulafat",
- "host2_speed": 1.1,
- "host2_pitch": 0,
+ "host2_speed": 1.12,
+ "host2_pitch": 0.5,
  "host2_style": "",
  "tts_models": "gemini-2.5-flash-preview-tts,gemini-2.5-pro-preview-tts",
  "tts_retry_min": 60,
@@ -66,5 +66,5 @@
  "host1_manner": "brisk",
  "host2_spoken": "ЛЄра",
  "host2_persona": "a young woman with a LOW, deep, smooth female voice with a warm chest resonance, confident and NOT childish",
- "host2_manner": "weighty"
+ "host2_manner": "report"
 }
