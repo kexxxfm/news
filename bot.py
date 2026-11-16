@@ -7,6 +7,8 @@ import random
 import re
 import sys
 import time
+import urllib.error
+import urllib.request
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -71,9 +73,9 @@ KEEP_EPISODES = opt("keep_episodes", "KEEP_EPISODES", 24)
 # Озвучка ЛИШЕ Gemini TTS. Запасного «поганого» голосу немає: якщо Gemini не відповідає, бот довго й терпляче
 # повторює запит (зростаючі паузи, обидві найкращі моделі), а якщо не вийшло — повторює ПОПЕРЕДНІЙ випуск.
 TTS_MODELS = [m.strip() for m in opt("tts_models", "TTS_MODELS",
-              "gemini-2.5-flash-preview-tts,gemini-2.5-pro-preview-tts,gemini-3.8-flash-tts,gemini-3.8-flash-lite-tts").split(",") if m.strip()]
+              "gemini-2.5-flash-preview-tts,gemini-2.5-pro-preview-tts,gemini-3.8-flash-lite-tts,gemini-3.8-flash-tts").split(",") if m.strip()]
 if opt("tts_auto_new", "TTS_AUTO_NEW", True):  # навіть якщо в панелі збережено старий список, нове покоління додається в кінець
-    TTS_MODELS += [m for m in ("gemini-3.8-flash-tts", "gemini-3.8-flash-lite-tts") if m not in TTS_MODELS]
+    TTS_MODELS += [m for m in ("gemini-3.8-flash-lite-tts", "gemini-3.8-flash-tts") if m not in TTS_MODELS]
 TTS_RETRY_MIN = opt("tts_retry_min", "TTS_RETRY_MIN", 40)      # скільки хвилин боротися за якісну озвучку
 TTS_MAX_ATTEMPTS = opt("tts_max_attempts", "TTS_MAX_ATTEMPTS", 20)  # стеля спроб за один випуск (береже квоту)
 TTS_AIR_MARGIN_MIN = opt("tts_air_margin_min", "TTS_AIR_MARGIN_MIN", 8)  # не боротися за озвучку пізніше, ніж за стільки хвилин до ефіру
@@ -359,7 +361,7 @@ HTTP_TIMEOUT_S = opt("http_timeout", "HTTP_TIMEOUT", 150)  # таймаут од
 
 def _client():
     try:
-        opts = genai_types.HttpOptions(timeout=int(HTTP_TIMEOUT_S * 1000))
+        opts = genai_types.HttpOptions(timeout=int(HTTP_TIMEOUT_S * 1000), api_version="v1beta")
     except Exception:  # стара версія SDK без цього параметра
         return genai.Client(api_key=os.environ["GEMINI_API_KEY"])
     return genai.Client(api_key=os.environ["GEMINI_API_KEY"], http_options=opts)
@@ -723,36 +725,72 @@ def _audio_problem(pcm: bytes, used: list[str]) -> str | None:
     return None
 
 
-def _tts_request(client, model: str, voice: str, style: str, used: list[str]) -> bytes:
+class GeminiHTTPError(Exception):
+    """Відповідь Gemini API з помилкою (code — HTTP-статус)."""
+    def __init__(self, code: int, message: str):
+        self.code = code
+        super().__init__(message)
+
+
+class GeminiNetworkError(Exception):
+    """Збій мережі або тайм-аут — повторюємо."""
+
+
+def _post_json(url: str, body: dict, timeout: float = 150) -> dict:
+    """POST у Gemini API напряму (без google-genai): озвучка не залежить від версії бібліотеки, яка оновлюється сама
+    (нова мажорна версія 2.x почала слати для TTS запит, який сервер відхиляє: Unknown name "speechConfig")."""
+    req = urllib.request.Request(url, data=json.dumps(body).encode("utf-8"), method="POST",
+                                 headers={"Content-Type": "application/json", "x-goog-api-key": os.environ["GEMINI_API_KEY"]})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        try:
+            msg = json.loads(e.read().decode("utf-8"))["error"]["message"]
+        except Exception:
+            msg = str(e.reason)
+        raise GeminiHTTPError(e.code, msg) from None
+    except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as e:
+        raise GeminiNetworkError(str(e)) from None
+
+
+GEMINI_API = "https://generativelanguage.googleapis.com/v1beta/"
+
+
+def _tts_request(model: str, voice: str, style: str, used: list[str]) -> bytes:
     """Один запит озвучення; повертає сирий PCM (24 кГц, 16 біт, моно).
-    Моделі покоління 3.8 працюють через Interactions API (стиль окремо від тексту, паузи — тегом); решта — generateContent."""
+    Моделі покоління 3.8 — Interactions API (стиль окремо від тексту, паузи тегом); решта — generateContent."""
     if model.startswith("gemini-3.8"):
         text = "\n\n<long pause>\n\n".join(used)  # паузи між фразами тегом: надійніше, ніж проханням у стилі
-        it = client.interactions.create(
-            model=model,
-            input=[{"type": "user_input", "content": [{"type": "text", "text": text,
-                                                       "annotations": [{"type": "speech_metadata", "style": style}]}]}],
-            response_format={"type": "audio", "mime_type": "audio/l16", "sample_rate": 24000},
-            generation_config={"speech_config": [{"voice": voice}]})
-        data = it.output_audio.data
-        return base64.b64decode(data) if isinstance(data, str) else bytes(data)
-    cfg = genai_types.GenerateContentConfig(
-        response_modalities=["AUDIO"],
-        speech_config=genai_types.SpeechConfig(
-            voice_config=genai_types.VoiceConfig(
-                prebuilt_voice_config=genai_types.PrebuiltVoiceConfig(voice_name=voice))))
-    resp = client.models.generate_content(model=model, contents=style + "\n\n" + "\n\n".join(used), config=cfg)
-    return resp.candidates[0].content.parts[0].inline_data.data
+        j = _post_json(GEMINI_API + "interactions", {
+            "model": model,
+            "input": [{"type": "user_input", "content": [{"type": "text", "text": text,
+                                                          "annotations": [{"type": "speech_metadata", "style": style}]}]}],
+            "response_format": {"type": "audio", "mime_type": "audio/l16", "sample_rate": 24000},
+            "generation_config": {"speech_config": [{"voice": voice}]}}, HTTP_TIMEOUT_S)
+        for step in reversed(j.get("steps") or []):
+            if step.get("type") == "model_output":
+                for c in step.get("content") or []:
+                    if c.get("type") == "audio" and c.get("data"):
+                        return base64.b64decode(c["data"])
+        raise ValueError("відповідь без аудіо")
+    j = _post_json(f"{GEMINI_API}models/{model}:generateContent", {
+        "contents": [{"parts": [{"text": style + "\n\n" + "\n\n".join(used)}]}],
+        "generationConfig": {"responseModalities": ["AUDIO"],
+                             "speechConfig": {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": voice}}}}}, HTTP_TIMEOUT_S)
+    try:
+        return base64.b64decode(j["candidates"][0]["content"]["parts"][0]["inlineData"]["data"])
+    except (KeyError, IndexError, TypeError):
+        raise ValueError("відповідь без аудіо") from None
 
 
 def gemini_tts_pcm(texts: list[str], kinds: list[str], voice: str, style: str, budget_s: float | None = None):
     """Озвучення всього випуску одним запитом. Запасного голосу НЕМАЄ: при збоях бот повторює запит із
     зростаючими паузами (20 → 120 с), чергуючи моделі зі списку TTS_MODELS, доки не мине бюджет часу або не буде
-    TTS_MAX_ATTEMPTS спроб. 429 — чекаємо щонайменше хвилину; добова квота моделі вичерпана — модель відкладаємо;
-    400 — СПОЧАТКУ вважаємо запит завеликим і скорочуємо його для цієї моделі (кожна модель має свою стелю), і лише
-    якщо запит уже малий — модель недоступна; обрізане/задовге/«порожнє» аудіо — повторюємо.
+    TTS_MAX_ATTEMPTS спроб. 404/403 і помилка формату — модель відкладаємо; 400 — спочатку вважаємо запит завеликим і
+    скорочуємо його для цієї моделі (у кожної своя стеля), 429 — чекаємо щонайменше хвилину (добова квота — модель
+    відкладаємо); обрізане/задовге/«порожнє» аудіо — повторюємо. Жодна помилка однієї моделі не валить випуск.
     Повертає (PCM 24 кГц 16 біт моно, озвучені фрази, їхні типи)."""
-    client = _client()
     caps = {m: TTS_MAX_BYTES for m in TTS_MODELS}
     cache: dict = {}
 
@@ -773,7 +811,7 @@ def gemini_tts_pcm(texts: list[str], kinds: list[str], voice: str, style: str, b
         attempt += 1
         used, used_kinds = prepared(model)
         try:
-            pcm = _tts_request(client, model, voice, style, used)
+            pcm = _tts_request(model, voice, style, used)
             if not pcm:
                 raise ValueError("порожня відповідь без аудіо")
             problem = _audio_problem(pcm, used)
@@ -781,31 +819,34 @@ def gemini_tts_pcm(texts: list[str], kinds: list[str], voice: str, style: str, b
                 raise ValueError(problem)
             print(f"Gemini TTS: готово ({model}, спроба {attempt}, {len(pcm) / 48000:.0f} с на {sum(len(t) for t in used)} символів)")
             return pcm, used, used_kinds
-        except (genai_errors.ServerError, genai_errors.ClientError, *TRANSPORT_ERRORS,
-                ValueError, IndexError, AttributeError) as e:
+        except Exception as e:  # будь-яка помилка однієї моделі не повинна валити весь випуск
             code = getattr(e, "code", None) or type(e).__name__
             msg = " ".join(str(e).split())[:300]
             errors.append(f"{model}:{code}")
-            if isinstance(e, AttributeError) and "interactions" in str(e):
-                dead.add(model)
-                print(f"Gemini TTS {model}: потрібна новіша бібліотека google-genai ({msg})")
-                continue
-            if isinstance(e, genai_errors.ClientError) and code == 400:
-                size = len((style + "".join(used)).encode())
-                if size > 2800 and caps[model] > 2600:  # імовірно завеликий запит: скорочуємо для цієї моделі
-                    caps[model] = max(2600, int(size * 0.7))
-                    print(f"Gemini TTS {model}: помилка 400 на запиті {size} байт — скорочую до {caps[model]} і пробую ще: {msg}")
-                else:
+            if isinstance(e, GeminiHTTPError):
+                if code == 400:
+                    size = len((style + "".join(used)).encode())
+                    if "Invalid JSON payload" in msg or "Unknown name" in msg:
+                        dead.add(model)
+                        print(f"Gemini TTS {model}: сервер відхилив формат запиту: {msg}")
+                    elif size > 2800 and caps[model] > 2600:  # імовірно завеликий запит: скорочуємо для цієї моделі
+                        caps[model] = max(2600, int(size * 0.7))
+                        print(f"Gemini TTS {model}: помилка 400 на запиті {size} байт, скорочую до {caps[model]} і пробую ще: {msg}")
+                    else:
+                        dead.add(model)
+                        print(f"Gemini TTS {model}: помилка 400, модель недоступна: {msg}")
+                    continue
+                if code in (401, 403, 404):
                     dead.add(model)
-                    print(f"Gemini TTS {model}: помилка 400, модель недоступна: {msg}")
-                continue
-            if isinstance(e, genai_errors.ClientError) and code != 429:
+                    print(f"Gemini TTS {model}: помилка {code}, модель недоступна для цього ключа: {msg}")
+                    continue
+            elif not isinstance(e, (GeminiNetworkError, ValueError)):  # несподівана помилка в коді/відповіді
                 dead.add(model)
-                print(f"Gemini TTS {model}: помилка {code}, модель недоступна: {msg}")
+                print(f"Gemini TTS {model}: несподівана помилка {type(e).__name__}, модель відкладено: {msg}")
                 continue
             wait = TTS_DELAYS[min(attempt - 1, len(TTS_DELAYS) - 1)]
             if code == 429:
-                if re.search(r"PerDay|per day|daily", str(e), re.I):
+                if re.search(r"PerDay|per day|daily", msg, re.I):
                     dead.add(model)
                     print(f"Gemini TTS {model}: добова квота вичерпана, відкладаю модель")
                     continue
