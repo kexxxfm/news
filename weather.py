@@ -193,7 +193,23 @@ def percent_gen(p: int) -> str:
     return f"{num_words(p, 'gen')} {_form_gen(p, 'відсотка', 'відсотків')}"
 
 
-def compose_text(w: dict, rng=None) -> str:
+def _tip(w: dict, rng) -> str | None:
+    """Коротка дружня порада за прогнозом (без чисел): тепліше вдягнутися, парасолька, вода в спеку."""
+    d = " ".join(p["desc"] for p in w["points"]).lower()
+    if w["tmin"] <= -5:
+        return rng.choice(["Одягайтеся тепліше.", "Тепло одягайтеся: надворі холодно."])
+    if w["tmin"] <= 0 and w["tmax"] <= 3:
+        return rng.choice(["Одягайтеся тепліше.", "Не забудьте теплий шарф."])
+    if w["pmax"] >= 50 or any(x in d for x in ("дощ", "злив", "мряк")):
+        return rng.choice(["Не забудьте парасольку.", "Візьміть із собою парасольку."])
+    if "сніг" in d:
+        return rng.choice(["Будьте обережні на дорогах.", "Тепліше вдягайтеся й обережніше на ожеледі."])
+    if w["tmax"] >= 28:
+        return rng.choice(["Пийте більше води.", "Бережіть себе від спеки."])
+    return None
+
+
+def compose_text(w: dict, rng=None, tips: bool = True) -> str:
     """Текст погоди «у коді»: усі числа словами в правильних відмінках, без цифр і швидкості вітру.
     Три варіанти побудови — щоб випуски не звучали однаково."""
     import random as _r
@@ -211,6 +227,10 @@ def compose_text(w: dict, rng=None) -> str:
         f"Зараз {temp_nom(now['t'])}, {now['desc']}. Найближчими годинами — {rng_t}.",
     ])
     text = f"{head} {rain}"
+    if tips and not w["squall"] and not w["hazards"]:
+        tip = _tip(w, rng)
+        if tip:
+            text += " " + tip
     if w["squall"]:
         text += " Очікується шквальний вітер, будьте обережні."
     if w["hazards"]:
