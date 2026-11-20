@@ -6,6 +6,10 @@ on:
     - cron: "5,20,35 * * * *"   # GitHub запускає розклад «за можливості» й часто пропускає запуски, тому тригерів три на годину; зайві відсікає check
   workflow_dispatch:       # кнопка ручного запуску (публікує одразу, без очікування)
     inputs:
+      auto:
+        description: "Автоматичний запуск (для зовнішнього планувальника): діє та сама перевірка, що й для розкладу"
+        type: boolean
+        default: false
       post_to_telegram:
         description: "Опублікувати випуск у Telegram-каналі (для ручних запусків за замовчуванням ні)"
         type: boolean
@@ -33,6 +37,7 @@ jobs:
         env:
           SITE_BASE_URL: ${{ vars.SITE_BASE_URL }}
           EVENT: ${{ github.event_name }}
+          AUTO: ${{ inputs.auto }}
         run: |
           H=$((10#$(TZ=Europe/Kyiv date +%H)))
           NEXT=$(( (H + 1) % 24 ))
@@ -52,16 +57,18 @@ jobs:
           else
             AGE="$AGE_OVERRIDE"
           fi
-          MIN_AGE=$(( AIR_EVERY * 60 - 50 ))   # свіжіший випуск за цей вік означає «цей слот уже готовий»
-          CATCHUP=$(( AIR_EVERY * 60 + 40 ))   # старший за цей вік означає «слот пропущено» (GitHub не запустив розклад)
-          if [ "$EVENT" = "workflow_dispatch" ]; then
+          # Рішення за ВІКОМ останнього випуску, а не лише за парністю години: GitHub запускає розклад рідко й із запізненням,
+          # тому при «парному» правилі більшість запусків відкидалась. Парність лишилась як перевага (точніший слот).
+          T_SLOT=$(( AIR_EVERY * 60 - 50 ))   # слот «ідеальний» (парна година ефіру): достатньо 70 хв від попереднього
+          T_ANY=$(( AIR_EVERY * 60 - 20 ))    # будь-яка година: випуск «прострочений», якщо минуло 100 хв
+          if [ "$EVENT" = "workflow_dispatch" ] && [ "$AUTO" != "true" ]; then
             GO=true; WHY="ручний запуск"
-          elif [ $(( NEXT % AIR_EVERY )) -eq "$AIR_OFFSET" ] && [ "$AGE" -ge "$MIN_AGE" ]; then
+          elif [ $(( NEXT % AIR_EVERY )) -eq "$AIR_OFFSET" ] && [ "$AGE" -ge "$T_SLOT" ]; then
             GO=true; WHY="час випуску, попередній був ${AGE} хв тому"
-          elif [ "$AGE" -ge "$CATCHUP" ]; then
-            GO=true; WHY="наздоганяємо пропущений слот, попередній був ${AGE} хв тому"
+          elif [ "$AGE" -ge "$T_ANY" ]; then
+            GO=true; WHY="випуск прострочений: попередній був ${AGE} хв тому (ефір о ${NEXT}:00)"
           else
-            GO=false; WHY="не час випуску або випуск для цього слота вже готовий"
+            GO=false; WHY="випуск для цього слота вже готовий (попередній ${AGE} хв тому, потрібно ≥ ${T_ANY})"
           fi
           echo "go=$GO" >> "$GITHUB_OUTPUT"
           echo "Київ зараз ${H} год, найближчий ефір о ${NEXT}:00, вік останнього випуску ${AGE} хв -> go=$GO (${WHY})"
@@ -116,7 +123,7 @@ jobs:
 
       # Випуск готовий заздалегідь; чекаємо потрібної хвилини перед ефіром (лише для запусків за розкладом)
       - name: Дочекатися часу публікації
-        if: steps.bot.outputs.published == 'true' && github.event_name != 'workflow_dispatch'
+        if: steps.bot.outputs.published == 'true' && (github.event_name != 'workflow_dispatch' || inputs.auto)
         run: |
           M=$((10#$(TZ=Europe/Kyiv date +%M)))
           S=$((10#$(date +%S)))
@@ -126,7 +133,7 @@ jobs:
 
       # Публікація випуску в Telegram-каналі (одночасно з RSS). Ручні запуски публікують лише за галочкою.
       - name: Опублікувати випуск у Telegram-каналі
-        if: steps.bot.outputs.published == 'true' && steps.bot.outputs.tg_post == 'true' && (github.event_name != 'workflow_dispatch' || inputs.post_to_telegram)
+        if: steps.bot.outputs.published == 'true' && steps.bot.outputs.tg_post == 'true' && (github.event_name != 'workflow_dispatch' || inputs.post_to_telegram || inputs.auto)
         continue-on-error: true
         run: python post_telegram.py
         env:
@@ -137,7 +144,7 @@ jobs:
 
       # force_orphan: історія гілки не росте, лишається один останній коміт
       - uses: peaceiris/actions-gh-pages@v4
-        if: steps.bot.outputs.published == 'true' || github.event_name == 'workflow_dispatch'
+        if: steps.bot.outputs.published == 'true' || (github.event_name == 'workflow_dispatch' && !inputs.auto)
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./site
