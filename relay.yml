@@ -1,0 +1,62 @@
+# Поклади цей файл у репозиторій за шляхом: .github/workflows/relay.yml
+#
+# «Метроном»: страховка від ненадійного розкладу GitHub (його cron часто не стартує годинами).
+# Кожен цикл: чекає, поки настане час наступного випуску (за віком останнього випуску), запускає hourly.yml
+# в автоматичному режимі й запускає сам себе знову. Дублів випусків не буде: hourly.yml сам перевіряє, чи пора.
+# Запустити один раз: Actions -> relay -> Run workflow (або кнопка в панелі). Раз на 6 годин його «підстраховує» cron.
+# Вимкнути: змінна репозиторію RELAY = false (Settings -> Secrets and variables -> Actions -> Variables).
+name: relay
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 */6 * * *"   # самолікування: якщо ланцюжок обірвався, цей запуск його відновлює
+
+concurrency:
+  group: relay
+  cancel-in-progress: false
+
+permissions:
+  actions: write
+  contents: read
+
+env:
+  AIR_EVERY: "2"   # має збігатися з hourly.yml
+
+jobs:
+  relay:
+    if: ${{ vars.RELAY != 'false' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 170
+    steps:
+      - name: Дочекатися часу випуску, запустити hourly.yml і наступний цикл
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SITE_BASE_URL: ${{ vars.SITE_BASE_URL }}
+          REPO: ${{ github.repository }}
+          REF: ${{ github.ref_name }}
+        run: |
+          if [ -z "${AGE_OVERRIDE:-}" ]; then
+            cat > /tmp/age.py <<'PY'
+          import json, os, urllib.request
+          from datetime import datetime, timezone
+          try:
+              eps = json.load(urllib.request.urlopen(os.environ["SITE_BASE_URL"].rstrip("/") + "/episodes.json", timeout=20))
+              last = max(datetime.fromisoformat(e["pub"]) for e in eps)
+              print(int((datetime.now(timezone.utc) - last).total_seconds() // 60))
+          except Exception:
+              print(99999)
+          PY
+            AGE=$(python3 /tmp/age.py)
+          else
+            AGE="$AGE_OVERRIDE"
+          fi
+          T_ANY=$(( AIR_EVERY * 60 - 20 ))          # з цього віку hourly.yml вважає випуск простроченим
+          WAIT=$(( T_ANY - AGE + 2 ))                # +2 хв запасу, щоб на момент запуску вік уже перевищив поріг
+          [ "$WAIT" -lt 10 ] && WAIT=10              # не частіше ніж раз на 10 хв (щоб не смикати Telegram без потреби)
+          [ "$WAIT" -gt 150 ] && WAIT=150
+          echo "Вік останнього випуску ${AGE} хв; наступна перевірка через ${WAIT} хв"
+          ${SLEEP:-sleep} $(( WAIT * 60 ))
+          ${GH:-gh} workflow run hourly.yml --repo "$REPO" --ref "$REF" -f auto=true
+          ${GH:-gh} workflow run relay.yml --repo "$REPO" --ref "$REF"
+          echo "Запущено hourly.yml (auto) і наступний цикл relay"
