@@ -59,12 +59,21 @@
  "weather_fx_enabled": true,
  "weather_fx_db": -22,
  "safety_enabled": false,
- "tg_post_enabled": true,
+ "tg_post_enabled": false,
  "tg_post_channel": "@kexxxfm",
  "host1_spoken": "АнгелІна",
  "host1_persona": "a 19-year-old young woman with a feminine, clear, bright, HIGH-pitched voice in a high female register, mature, confident and NOT childish, not a girl's voice",
  "host1_manner": "weighty",
  "host2_spoken": "ЛЄра",
  "host2_persona": "a young woman with a LOW, deep, smooth female voice with a warm chest resonance, confident and NOT childish",
- "host2_manner": "report"
+ "host2_manner": "report",
+ "reuse_max_hours": 12,
+ "callsign_enabled": true,
+ "hook_enabled": true,
+ "skip_operational": true,
+ "digest_from": 6,
+ "digest_to": 8,
+ "digest_window_min": 480,
+ "digest_target": 20,
+ "weather_tips": true
 }
