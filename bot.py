@@ -115,6 +115,8 @@ WEATHER_FX_DB = opt("weather_fx_db", "WEATHER_FX_DB", -22.0)      # їхня г�
 VOICE_FX_ENABLED = opt("voice_fx_enabled", "VOICE_FX_ENABLED", True)  # ефірна обробка голосу
 VOICE_FX_AMOUNT = opt("voice_fx_amount", "VOICE_FX_AMOUNT", 0.7)
 HEAVY_PAUSE_MS = opt("heavy_pause_ms", "HEAVY_PAUSE_MS", 1500)    # пауза навколо важкої новини (без перебивок)
+HEAVY_STING = opt("heavy_sting", "HEAVY_STING", "soft")  # перебивки біля тяжких новин: soft — тихі й м'які, full — звичайні, none — лише пауза
+HEAVY_STING_DB = opt("heavy_sting_db", "HEAVY_STING_DB", -9.0)
 SKIP_OPERATIONAL = opt("skip_operational", "SKIP_OPERATIONAL", True)  # ігнорувати пости про тривоги, відбої, проліт БпЛА/ракет
 DIGEST_FROM = opt("digest_from", "DIGEST_FROM", 6)    # випуски з ефіром у цьому діапазоні годин — підсумкові (до 8 ранку свіжого майже немає)
 DIGEST_TO = opt("digest_to", "DIGEST_TO", 8)
@@ -220,22 +222,23 @@ PROMPT = """Ти — редакторка і ведуча випуску нов�
 вибухи, ракетні й дронові атаки, загиблих і поранених пиши прямо, точно й стримано, без пом'якшень і евфемізмів
 (не «прилетіло», не «бавовна»): що сталося, де, скільки загиблих і поранених. Без емоційних оцінок.
 
-ЗАВДАННЯ 2 — привітання станції (intro). Ведуча цього випуску: {host} (жінка), узгоджуй рід дієслів.
-Напиши 2 короткі речення в такому ПОРЯДКУ. (1) СПОЧАТКУ назви «{station}» (ДОСЛІВНО, без відмінювання і без змін
-у написанні) і скажи, що це випуск новин — щоразу інакше («випуск новин», «новини», «новини для вас»).
-(2) ПОТІМ назви себе у формі на кшталт «З вами знову {host}», «Для вас працює {host}», «В ефірі {host}»,
-«{host} знову з вами», «Новини для вас читає {host}» — щоразу інакше. Вітатися НЕ треба: привітання вже
-прозвучало у вступній фразі (завдання 4). НІКОЛИ не починай речення зі слова «Це» і не пиши «Це — {host}»;
-не вживай «мене звати», «моє ім'я»; слів «найкоротші» і «найкоротший» НЕ вживай. Манера цього разу: {vibe}.
-НЕ називай конкретний час, години, хвилини, дату чи день тижня. Без жартів, без штампів на кшталт «шановні слухачі».
+ЗАВДАННЯ 2 — привітання ведучої (intro). Ведуча цього випуску: {host} (жінка), узгоджуй рід дієслів.
+Це друга фраза після вступної (завдання 4): 1–2 короткі живі речення, щоразу інакше, у стилі «З вами знову {host}, і я
+ділюся свіжими новинами. Погнали!». Обов'язково: ім'я ведучої «{host}» (у формах на кшталт «З вами знову {host}»,
+«{host} знову з вами», «У студії знову {host}»), слово «новини» або «новинами» та енергійне запрошення почати
+(«Погнали!», «Поїхали!», «Починаємо!»). Назву радіостанції НЕ повторюй, слів «підготувала» і «представляє» НЕ вживай.
+Вітатися вдруге НЕ треба: привітання вже прозвучало у вступній фразі. НІКОЛИ не починай речення зі слова «Це»
+і не пиши «Це — {host}»; не вживай «мене звати», «моє ім'я»; слів «найкоротші» і «найкоротший» НЕ вживай.
+Манера цього разу: {vibe}. НЕ називай конкретний час, години, хвилини, дату чи день тижня. Без жартів, без штампів.
 
-ЗАВДАННЯ 3 — прощання (outro). 1–2 короткі речення в такому ПОРЯДКУ. (1) СПОЧАТКУ скажи, що новини «Кекс ФМ»
-завершено (щоразу інакше; слова «Кекс ФМ» обов'язкові). (2) ПОТІМ назви себе у формі «З вами була {host}».
+ЗАВДАННЯ 3 — прощання (outro). 1–2 короткі живі речення в такому ПОРЯДКУ. (1) СПОЧАТКУ неформально й щоразу інакше
+заверши випуск у стилі «Ось поки і все, і зовсім недовго» («На цьому поки все», «Ось і все на зараз — коротко й по
+справі»); НЕ пиши «новини Кекс ФМ завершено» чи «на сьогодні завершено». (2) ПОТІМ назви себе у формі «З вами була {host}».
 (3) НАПРИКІНЦІ обов'язково побажай «{wish}» (саме цими словами); перед побажанням можна додати дуже коротке тепле
 слово на кшталт «Бережіть себе». Слів «найкоротші» і «найкоротший» НЕ вживай. Без жартів і без конкретного часу.
 Заклик до донату НЕ додавай: він звучить окремо перед прощанням.
 
-ЗАВДАННЯ 4 — вступна фраза (hook), вона звучить ПЕРШОЮ, ще до привітання станції. 1–2 коротких живих речення на тему:
+ЗАВДАННЯ 4 — вступна фраза (hook), вона звучить ПЕРШОЮ, ще до привітання ведучої. 1–2 коротких живих речення на тему:
 «Це — новини. {hi}! Ми коротенько — не перемикайтесь.» Кожного разу інакше, своїми словами, тепло й по-людськи, ніби
 ти щойно сіла в студії в Києві. Обов'язково: слово «новини», привітання «{hi}», що випуск коротенький (слово
 «коротенько» або «коротко») і прохання не перемикатися («не перемикайтесь» або «залишайтесь з нами»).{digest_hook}
@@ -468,15 +471,16 @@ VIBES = [
     "серйозно й упевнено",
 ]
 INTRO_FALLBACKS = [
-    "{station}. З вами знову {host}.",
-    "{station} — випуск новин. Для вас працює {host}.",
-    "В ефірі {station}. {host} знову з вами.",
-    "{station}, новини для вас. Новини читає {host}.",
+    "З вами знову {host}, і я ділюся свіжими новинами. Погнали!",
+    "{host} знову з вами — ділюся свіжими новинами. Поїхали!",
+    "З вами {host}, а в мене для вас свіжі новини. Погнали!",
+    "У студії знову {host}, ділюся новинами. Починаємо!",
 ]
 OUTRO_FALLBACKS = [
-    "Новини Кекс ФМ завершено. З вами була {host}. {Wish}!",
-    "Кекс ФМ: випуск новин завершено. З вами була {host}. {Wish}!",
-    "Новини на Кекс ФМ завершено. З вами була {host}. {Wish}!",
+    "Ось поки і все, і зовсім недовго. З вами була {host}. {Wish}!",
+    "На цьому поки все, ми були зовсім ненадовго. З вами була {host}. {Wish}!",
+    "Ось і все на зараз — коротко й по справі. З вами була {host}. {Wish}!",
+    "Поки що все, бережіть себе. З вами була {host}. {Wish}!",
 ]
 
 
@@ -593,35 +597,27 @@ def _this_is(text: str, host: str) -> bool:
         re.search(r"(?i)\bце\b\s*[—–\-]?\s*" + re.escape(_first_name(host)), text))
 
 
+LAUNCH_WORDS = ("погнали", "поїхали", "починаємо", "розпочинаємо", "вперед", "стартуємо")
+
+
 def valid_intro(text: str, ctx: dict) -> bool:
-    """Спочатку «Служба новин…», і лише потім ім'я ведучої; слова «найкоротші» немає."""
+    """Динамічне «З вами знову {ім'я}, і я ділюся свіжими новинами. Погнали!»: ім'я, «новини», запрошення почати."""
     low = text.lower()
-    name, st = _first_name(ctx["host"]), STATION.lower()
-    return (bool(text) and name in low and st in low and low.index(st) < low.index(name)
+    name = _first_name(ctx["host"])
+    return (bool(text) and name in low and "новин" in low and any(w in low for w in LAUNCH_WORDS)
             and "найкоротш" not in low
             and not has_russian(text) and not NO_TIME_RE.search(text) and not NO_NAME_RE.search(text)
             and not _this_is(text, ctx["host"]))
 
 
 def valid_outro(text: str, ctx: dict) -> bool:
-    """Порядок: «Кекс ФМ… новини завершено» -> ім'я ведучої -> побажання; слова «найкоротші» немає."""
+    """Неформальне «Ось поки і все…», потім ім'я ведучої, потім побажання. Старої формули «…завершено» вже немає."""
     low = text.lower()
     name, wish = _first_name(ctx["host"]), ctx["wish"]
-    return (bool(text) and "кекс фм" in low and name in low and wish in low
-            and low.index("кекс фм") < low.index(name) < low.index(wish) and "найкоротш" not in low
+    return (bool(text) and name in low and wish in low and low.index(name) < low.index(wish)
+            and ("поки" in low or "все" in low or "на зараз" in low)
+            and "завершено" not in low and "найкоротш" not in low
             and not has_russian(text) and not NO_TIME_RE.search(text) and not NO_NAME_RE.search(text))
-
-
-HOOK_FALLBACKS = [
-    "Це — новини. {hi}! Ми коротенько, не перемикайтесь.",
-    "{hi}! Це новини, ми коротенько — не перемикайтесь.",
-    "Це новини. {hi}, Києве! Коротенько й по справі, залишайтесь з нами.",
-    "{hi}! Новини — коротко, не перемикайтесь.",
-]
-HOOK_FALLBACKS_DIGEST = [
-    "Це — новини. {hi}! Підсумки останніх годин — коротенько, не перемикайтесь.",
-    "{hi}! Це новини: підсумки ночі, ми коротенько — залишайтесь з нами.",
-]
 
 
 def valid_hook(text: str, ctx: dict) -> bool:
@@ -934,25 +930,29 @@ async def make_audio(texts: list[str], kinds: list[str], host: dict, out_path: s
     except TTSUnavailable as e:
         print(f"::warning::Якісної озвучки Gemini отримати не вдалося ({e}). Запасного голосу немає.")
         return None
-    voice = radio.normalize(radio.decode_pcm16(pcm, 24000, host["speed"], host["pitch"]), VOICE_DB)
+    # Швидкість і тон застосовуємо ПІСЛЯ нарізки: прискорення стискає паузи, і межі між новинами переставали знаходитись
+    raw = radio.normalize(radio.decode_pcm16(pcm, 24000, 1.0, 0.0), VOICE_DB)
     if VOICE_FX_ENABLED:  # ефірна обробка: де-эссер, компресор, присутність
-        voice = radio.normalize(radio.fm_voice(voice, VOICE_FX_AMOUNT), VOICE_DB)
-    before = len(voice) / radio.SR
-    voice = radio.compress_silences(voice)  # довгі «зависання» Gemini стискаємо до півтори секунди
-    if before - len(voice) / radio.SR > 1:
-        print(f"Скорочено довгі тиші в озвученні: {before:.0f} с -> {len(voice) / radio.SR:.0f} с")
-    parts, gaps = radio.split_by_pauses(voice, len(used))
+        raw = radio.normalize(radio.fm_voice(raw, VOICE_FX_AMOUNT), VOICE_DB)
+    before = len(raw) / radio.SR
+    raw = radio.compress_silences(raw)  # довгі «зависання» Gemini стискаємо до півтори секунди
+    if before - len(raw) / radio.SR > 1:
+        print(f"Скорочено довгі тиші в озвученні: {before:.0f} с -> {len(raw) / radio.SR:.0f} с")
+    parts, gaps = radio.split_by_pauses(raw, len(used))
     method = "за паузами"
     if parts is None:  # паузи Gemini короткі чи нерівні — розкладаємо за довжиною тексту кожної фрази
-        parts, gaps = radio.split_by_text(voice, used)
+        parts, gaps = radio.split_by_text(raw, used)
         method = "за довжиною тексту"
+    if parts is None:  # останній шанс: ПРИМУСОВА нарізка (перебивки важливіші за ризик неточного розрізу)
+        parts, gaps = radio.split_by_text(raw, used, strict=False)
+        method = "ПРИМУСОВО за довжиною тексту (можливі неточності)"
     if parts is None:
         print(f"Озвучення не вдалося розрізати на {len(used)} частин; перебивок між новинами не буде")
-        parts = [voice]
+        parts = [raw]
     else:
         print(f"Озвучення розрізано на {len(parts)} частин ({method}), паузи між ними (мс): {gaps}")
-    print(f"Озвучення: Gemini TTS (голос {host['gemini']}, ведуча {host['name']})")
-    parts = [radio.trim_silence(p) for p in parts]
+    print(f"Озвучення: Gemini TTS (голос {host['gemini']}, ведуча {host['name']}, швидкість {host['speed']}, тон {host['pitch']:+})")
+    parts = [radio.trim_silence(radio.retime(p, host["speed"], host["pitch"])) for p in parts]
 
     try:
         assets = radio.load_assets(ASSET_DIR, pack=pack)
@@ -972,12 +972,15 @@ async def make_audio(texts: list[str], kinds: list[str], host: dict, out_path: s
     wfx = radio.weather_fx(weather_fx_kind, 30.0) if (WEATHER_FX_ENABLED and weather_fx_kind and "weather" in used_kinds) else None
     if wfx is not None:
         print(f"Звуки погоди під блоком погоди: {weather_fx_kind} ({WEATHER_FX_DB} дБ)")
+    stats: dict = {}
     track = radio.assemble(parts, used_kinds, opener, closer, stings, bed,
                            assets.get("bed_seamless", True), BED_UNDER_DB, BED_GAP_DB,
                            JINGLE_GAIN_DB, STING_GAIN_DB, gap_ms=PAUSE_PLAIN_MS, weather_sting=wsting,
                            pre_ms=PAUSE_BEFORE_MS, post_ms=PAUSE_AFTER_MS,
                            gap_heavy_ms=HEAVY_PAUSE_MS, weather_fx=wfx, weather_fx_db=WEATHER_FX_DB,
-                           callsign=callsign)
+                           callsign=callsign, heavy_mode=HEAVY_STING, heavy_db=HEAVY_STING_DB, stats=stats)
+    print(f"Перебивки між блоками: вставлено {stats.get('stings', 0)} (з них м'яких біля тяжких новин: {stats.get('soft', 0)}), "
+          f"лише пауза біля тяжких: {stats.get('none', 0)}")
     radio.export_mp3(track, out_path, MP3_BITRATE)
     return len(track) / radio.SR, used, used_kinds
 
