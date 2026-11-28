@@ -50,6 +50,17 @@ def decode_file(path: str, tempo: float = 1.0, channels: int = 1, pitch: float =
     return x
 
 
+def retime(x: np.ndarray, tempo: float = 1.0, pitch: float = 0.0) -> np.ndarray:
+    """Швидкість і тон для готового фрагмента (SR, моно): ті самі фільтри, що й у decode_pcm16, але вже ПІСЛЯ нарізки,
+    щоб прискорення не стискало паузи, за якими шукаємо межі між новинами."""
+    if abs(tempo - 1.0) < 0.005 and abs(pitch) < 0.01:
+        return x
+    out = _run(["ffmpeg", "-v", "error", "-f", "f32le", "-ar", str(SR), "-ac", "1", "-i", "pipe:0",
+                *_tempo(tempo, pitch), "-f", "f32le", "-ac", "1", "-ar", str(SR), "pipe:1"],
+               data=np.ascontiguousarray(x, dtype="<f4").tobytes())
+    return np.frombuffer(out, dtype="<f4").astype(np.float32)
+
+
 def decode_pcm16(pcm: bytes, rate: int = 24000, tempo: float = 1.0, pitch: float = 0.0) -> np.ndarray:
     out = _run(["ffmpeg", "-v", "error", "-f", "s16le", "-ar", str(rate), "-ac", "1", "-i", "pipe:0",
                 *_tempo(tempo, pitch), "-f", "f32le", "-ac", "1", "-ar", str(SR), "pipe:1"], data=pcm)
@@ -120,7 +131,7 @@ def compress_silences(x: np.ndarray, max_ms: int = 1400, min_run_ms: int = 2000,
     return np.concatenate([body, x[n * FRAME:]]).astype(np.float32)
 
 
-def split_by_text(x: np.ndarray, texts: list[str], min_gap_ms: int = 120, sigma_s: float = 1.6):
+def split_by_text(x: np.ndarray, texts: list[str], min_gap_ms: int = 120, sigma_s: float = 1.6, strict: bool = True):
     """Розрізає озвучення на len(texts) частин, спираючись на ДОВЖИНУ тексту кожної фрази (а не лише на
     довжину пауз): очікувана межа — там, де накопичена довжина тексту, а з усіх тихих проміжків біля неї
     обирається найдовший. Працює і при коротких та нерівних паузах. Повертає (частини, довжини
@@ -181,10 +192,10 @@ def split_by_text(x: np.ndarray, texts: list[str], min_gap_ms: int = 120, sigma_
     chosen.reverse()
     # Строга перевірка впевненості: краще без перебивок, ніж розрізати посеред фрази.
     for k, mi in enumerate(chosen):
-        if abs(cen[mi] - exp[k]) > 2.0 * sigma_s or dur[mi] < 400:
+        if abs(cen[mi] - exp[k]) > (2.0 if strict else 3.0) * sigma_s or dur[mi] < (400 if strict else 250):
             return None, [int(dur[mi]) for mi in chosen]
         rivals = [m2 for m2 in range(m_n) if m2 != mi and abs(cen[m2] - exp[k]) <= 2.0]
-        if rivals and max(dur[m2] for m2 in rivals) > 1.25 * dur[mi]:  # поруч є помітно довша пауза — неоднозначно
+        if strict and rivals and max(dur[m2] for m2 in rivals) > 1.25 * dur[mi]:  # поруч є помітно довша пауза — неоднозначно
             return None, [int(dur[mi]) for mi in chosen]
     # Перевірка узгодженості: швидкість мови (символів за секунду мовлення) у всіх частин має бути схожою.
     # Хибна межа дає частині «зайве» або «бракує» тексту — швидкість різко відрізняється.
@@ -196,7 +207,7 @@ def split_by_text(x: np.ndarray, texts: list[str], min_gap_ms: int = 120, sigma_
         if speech_s < 0.4:
             return None, [int(dur[mi]) for mi in chosen]
         rates.append(len(texts[k]) / speech_s)
-    if max(rates) / min(rates) > 1.5 or not 6.0 <= float(np.median(rates)) <= 26.0:
+    if strict and (max(rates) / min(rates) > 1.5 or not 6.0 <= float(np.median(rates)) <= 26.0):
         return None, [int(dur[mi]) for mi in chosen]
     cuts = [c * FRAME for c in cut_frames]
     segs, prev = [], 0
@@ -771,13 +782,24 @@ def _fit_fx(fx: np.ndarray, n: int) -> np.ndarray:
     return seg
 
 
+def _soften(st: np.ndarray, db: float = -9.0, max_s: float = 1.4) -> np.ndarray:
+    """М'яка версія перебивки для тяжких новин: приглушені високі, тихіше, укорочений хвіст."""
+    y = (_lp(st, 3000) * _db(db)).astype(np.float32)
+    n = min(len(y), int(max_s * SR))
+    y = y[:n].copy()
+    f = min(int(0.35 * SR), n // 2)
+    y[-f:] *= np.linspace(1, 0, f)[:, None]
+    return y
+
+
 def assemble(parts, kinds=None, opener=None, closer=None, stingers=None, bed=None,
              bed_seamless=True, bed_under_db=-20.0, bed_gap_db=-12.0,
              jingle_gain_db=0.0, sting_gain_db=0.0, gap_ms: int = 700, weather_sting=None,
              pre_ms: int = 450, post_ms: int = 250, gap_heavy_ms: int = 1500,
-             weather_fx=None, weather_fx_db: float = -22.0, callsign=None) -> np.ndarray:
+             weather_fx=None, weather_fx_db: float = -22.0, callsign=None,
+             heavy_mode: str = "soft", heavy_db: float = -9.0, stats: dict | None = None) -> np.ndarray:
     """Зводить випуск у СТЕРЕО (n, 2). Голос — моно, по центру; музика, джингли й фон — стерео.
-    kinds: teaser (після позивного), intro, news, news_heavy (важка новина: без перебивки, довша пауза), safety, weather, donate, outro."""
+    kinds: teaser (після позивного), intro, news, news_heavy (важка новина: heavy_mode soft — тиха м'яка перебивка, full — звичайна, none — лише довга пауза), safety, weather, donate, outro."""
     ms = lambda v: int(v * SR / 1000)
     parts = list(parts)
     kinds = list(kinds or ["news"] * len(parts))
@@ -818,18 +840,29 @@ def assemble(parts, kinds=None, opener=None, closer=None, stingers=None, bed=Non
             kb = kinds[i + 1] if i + 1 < len(kinds) else "news"
             heavy = "news_heavy" in (ka, kb)
             use_w = kb == "weather" and weather_sting is not None
-            if kb in ("news", "weather") and (stingers or use_w) and not heavy:
+            target = kb in ("news", "news_heavy", "weather")
+            if target and (stingers or use_w) and (not heavy or heavy_mode in ("soft", "full")):
+                soft = heavy and heavy_mode == "soft"  # біля тяжких новин перебивка є, але тиха й м'яка
                 if use_w:
                     st = weather_sting * _db(sting_gain_db)  # особлива перебивка лише перед погодою
                 else:
                     choices = [k for k in range(len(stingers)) if k != last] or [0]
                     last = random.choice(choices)
                     st = stingers[last] * _db(sting_gain_db)
-                s0 = end + ms(pre_ms)  # тиша після голосу, потім перебивка, потім тиша перед наступною новиною
+                if soft:
+                    st = _soften(st, heavy_db)
+                pre = ms(max(pre_ms, int(gap_heavy_ms * 0.4))) if heavy else ms(pre_ms)  # навколо тяжких — більше тиші
+                post = ms(max(post_ms, int(gap_heavy_ms * 0.27))) if heavy else ms(post_ms)
+                s0 = end + pre  # тиша після голосу, потім перебивка, потім тиша перед наступною новиною
                 track = _mix(track, st, s0)
-                cursor = s0 + len(st) + ms(post_ms)
+                cursor = s0 + len(st) + post
+                if stats is not None:
+                    stats["stings"] = stats.get("stings", 0) + 1
+                    stats["soft"] = stats.get("soft", 0) + (1 if soft else 0)
             elif heavy:
-                cursor = end + ms(gap_heavy_ms)  # біля важкої новини — без «танцювальних» вставок, лише пауза
+                cursor = end + ms(gap_heavy_ms)  # режим none: лише довга пауза
+                if stats is not None:
+                    stats["none"] = stats.get("none", 0) + 1
             else:
                 cursor = end + ms(gap_ms)
         else:
